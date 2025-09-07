@@ -1,0 +1,217 @@
+import { type NextRequest, NextResponse } from "next/server"
+import { sql } from "@/lib/database"
+import { verifySession } from "@/lib/auth"
+
+function getDeviceId(request: NextRequest): string {
+  return request.headers.get("x-device-id") || request.headers.get("user-agent") || "unknown-device"
+}
+
+async function getUserFromRequest(request: NextRequest): Promise<string | null> {
+  const sessionToken = request.headers.get("authorization")?.replace("Bearer ", "")
+  if (!sessionToken) return null
+
+  const deviceId = getDeviceId(request)
+  return await verifySession(sessionToken, deviceId)
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const userId = await getUserFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const accounts = await sql`
+      SELECT * FROM accounts 
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+    `
+
+    return NextResponse.json(accounts)
+  } catch (error) {
+    console.error("Get accounts error:", error)
+    return NextResponse.json({ error: "Failed to load accounts" }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const userId = await getUserFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { name, type, balance, color } = await request.json()
+
+    // Validate required fields
+    if (!name || !type || balance === undefined || balance === null) {
+      return NextResponse.json({ error: "Name, type, and balance are required" }, { status: 400 })
+    }
+
+    // Validate balance
+    if (typeof balance !== "number" || balance < 0) {
+      return NextResponse.json({ error: "Balance must be a non-negative number" }, { status: 400 })
+    }
+
+    // Validate name uniqueness for user
+    const [existingAccount] = await sql`
+      SELECT id FROM accounts 
+      WHERE user_id = ${userId} AND LOWER(name) = LOWER(${name.trim()})
+    `
+
+    if (existingAccount) {
+      return NextResponse.json({ error: "An account with this name already exists" }, { status: 400 })
+    }
+
+    const [account] = await sql`
+      INSERT INTO accounts (user_id, name, type, balance, color)
+      VALUES (${userId}, ${name.trim()}, ${type}, ${balance}, ${color || "blue"})
+      RETURNING *
+    `
+
+    return NextResponse.json(account)
+  } catch (error) {
+    console.error("Create account error:", error)
+    return NextResponse.json({ error: "Failed to create account" }, { status: 500 })
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const userId = await getUserFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { id, name, type, balance, color } = await request.json()
+
+    // Validate required fields
+    if (!id || !name || !type || balance === undefined || balance === null) {
+      return NextResponse.json({ error: "ID, name, type, and balance are required" }, { status: 400 })
+    }
+
+    // Validate balance
+    if (typeof balance !== "number" || balance < 0) {
+      return NextResponse.json({ error: "Balance must be a non-negative number" }, { status: 400 })
+    }
+
+    // Check if account exists and belongs to user
+    const [existingAccount] = await sql`
+      SELECT id, balance FROM accounts 
+      WHERE id = ${id} AND user_id = ${userId}
+    `
+
+    if (!existingAccount) {
+      return NextResponse.json({ error: "Account not found or access denied" }, { status: 404 })
+    }
+
+    // Validate name uniqueness for user (excluding current account)
+    const [duplicateAccount] = await sql`
+      SELECT id FROM accounts 
+      WHERE user_id = ${userId} AND LOWER(name) = LOWER(${name.trim()}) AND id != ${id}
+    `
+
+    if (duplicateAccount) {
+      return NextResponse.json({ error: "An account with this name already exists" }, { status: 400 })
+    }
+
+    // Start transaction to handle balance adjustment
+    const result = await sql.begin(async (sql) => {
+      // Calculate balance difference
+      const balanceDifference = balance - existingAccount.balance
+
+      // Update account
+      const [account] = await sql`
+        UPDATE accounts 
+        SET name = ${name.trim()}, type = ${type}, balance = ${balance}, 
+            color = ${color || "blue"}, updated_at = NOW()
+        WHERE id = ${id} AND user_id = ${userId}
+        RETURNING *
+      `
+
+      // If balance changed, create an adjustment transaction
+      if (balanceDifference !== 0) {
+        // Get "Other" category for balance adjustments
+        const [otherCategory] = await sql`
+          SELECT id FROM categories 
+          WHERE user_id = ${userId} AND name = 'Other' AND type = ${balanceDifference > 0 ? "income" : "expense"}
+        `
+
+        if (otherCategory) {
+          await sql`
+            INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date)
+            VALUES (
+              ${userId}, 
+              ${id}, 
+              ${otherCategory.id}, 
+              ${balanceDifference > 0 ? "income" : "expense"}, 
+              ${Math.abs(balanceDifference)}, 
+              'Balance adjustment for ${name.trim()}', 
+              ${new Date().toISOString().split("T")[0]}
+            )
+          `
+        }
+      }
+
+      return account
+    })
+
+    return NextResponse.json(result)
+  } catch (error) {
+    console.error("Update account error:", error)
+    return NextResponse.json({ error: "Failed to update account" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const userId = await getUserFromRequest(request)
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
+
+    if (!id) {
+      return NextResponse.json({ error: "Account ID required" }, { status: 400 })
+    }
+
+    // Start transaction to delete account and all related data
+    const result = await sql.begin(async (sql) => {
+      // Check if account exists and belongs to user
+      const [account] = await sql`
+        SELECT id FROM accounts 
+        WHERE id = ${id} AND user_id = ${userId}
+      `
+
+      if (!account) {
+        throw new Error("Account not found or access denied")
+      }
+
+      // Delete all transactions for this account
+      await sql`
+        DELETE FROM transactions 
+        WHERE account_id = ${id} AND user_id = ${userId}
+      `
+
+      // Delete the account
+      await sql`
+        DELETE FROM accounts 
+        WHERE id = ${id} AND user_id = ${userId}
+      `
+
+      return { success: true }
+    })
+
+    return NextResponse.json(result)
+  } catch (error) {
+    console.error("Delete account error:", error)
+
+    if (error.message.includes("not found") || error.message.includes("access denied")) {
+      return NextResponse.json({ error: error.message }, { status: 404 })
+    }
+
+    return NextResponse.json({ error: "Failed to delete account" }, { status: 500 })
+  }
+}
