@@ -5,7 +5,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Calendar, TrendingUp, TrendingDown, Search, Filter, ChevronDown, ChevronUp } from "lucide-react"
+import {
+  ArrowLeft,
+  Calendar,
+  TrendingUp,
+  TrendingDown,
+  Search,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+} from "lucide-react"
 import { apiClient } from "@/lib/api-client"
 
 interface Transaction {
@@ -42,20 +52,28 @@ export function TransactionHistory({
   const [currentPage, setCurrentPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const pageSize = 20
 
   useEffect(() => {
-    loadTransactions()
-  }, [accountId, categoryId, currentPage, sortBy, sortOrder, filterType])
+    setCurrentPage(1)
+    loadTransactions(1, false)
+  }, [accountId, categoryId, categoryName])
 
-  const loadTransactions = async () => {
-    setLoading(true)
+  const loadTransactions = async (page: number, append: boolean) => {
+    if (append) {
+      setLoadingMore(true)
+    } else {
+      setLoading(true)
+    }
+    setError(null)
     try {
       let endpoint = ""
       const params = new URLSearchParams({
         limit: pageSize.toString(),
-        offset: ((currentPage - 1) * pageSize).toString(),
+        offset: ((page - 1) * pageSize).toString(),
       })
 
       if (accountId) {
@@ -69,14 +87,21 @@ export function TransactionHistory({
       const response = await apiClient.get(endpoint)
 
       if (response) {
-        setTransactions(response.transactions || [])
+        setTransactions((prev) =>
+          append ? [...prev, ...(response.transactions || [])] : response.transactions || [],
+        )
         setHasMore(response.hasMore || false)
         setTotal(response.total || 0)
       }
-    } catch (error) {
-      console.error("Error loading transactions:", error)
+    } catch (err) {
+      console.error("Error loading transactions:", err)
+      setError("Failed to load transactions")
     } finally {
-      setLoading(false)
+      if (append) {
+        setLoadingMore(false)
+      } else {
+        setLoading(false)
+      }
     }
   }
 
@@ -247,6 +272,7 @@ export function TransactionHistory({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {error && <p className="text-red-500 text-center mb-4">{error}</p>}
           {loading ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -308,11 +334,16 @@ export function TransactionHistory({
           {hasMore && (
             <div className="flex justify-center mt-6">
               <Button
-                onClick={() => setCurrentPage(currentPage + 1)}
-                disabled={loading}
+                onClick={() => {
+                  const nextPage = currentPage + 1
+                  setCurrentPage(nextPage)
+                  loadTransactions(nextPage, true)
+                }}
+                disabled={loadingMore}
                 className="gradient-purple border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl"
               >
-                Load More
+                {loadingMore && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {loadingMore ? "Loading..." : "Load More"}
               </Button>
             </div>
           )}

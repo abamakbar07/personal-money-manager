@@ -73,6 +73,10 @@ export function Transactions() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const pageSize = 20
   const [formData, setFormData] = useState({
     type: "expense",
     amount: "",
@@ -97,20 +101,46 @@ export function Transactions() {
     }
   }, [error, success])
 
+  const loadTransactions = async (page: number) => {
+    if (page > 1) {
+      setIsLoadingMore(true)
+    }
+    try {
+      const params = new URLSearchParams({
+        limit: pageSize.toString(),
+        offset: ((page - 1) * pageSize).toString(),
+      })
+      const response = await apiClient.get(`/api/transactions?${params}`)
+      if (response) {
+        setTransactions((prev) =>
+          page === 1 ? response.transactions || [] : [...prev, ...(response.transactions || [])],
+        )
+        setHasMore(response.hasMore || false)
+      }
+    } catch (error) {
+      console.error("Error loading transactions:", error)
+      setError("Failed to load transaction data. Please refresh the page.")
+    } finally {
+      if (page > 1) {
+        setIsLoadingMore(false)
+      }
+    }
+  }
+
   const loadData = async () => {
     setIsLoading(true)
     setError(null)
 
     try {
-      const [transactionsData, accountsData, categoriesData] = await Promise.all([
-        apiClient.get("/api/transactions"),
+      const [accountsData, categoriesData] = await Promise.all([
         apiClient.get("/api/accounts"),
         apiClient.get("/api/categories"),
       ])
 
-      setTransactions(transactionsData || [])
       setAccounts(accountsData || [])
       setCategories(categoriesData || [])
+      setCurrentPage(1)
+      await loadTransactions(1)
     } catch (error) {
       console.error("Error loading data:", error)
       setError("Failed to load transaction data. Please refresh the page.")
@@ -604,6 +634,23 @@ export function Transactions() {
           </Card>
         ))}
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center mt-6">
+          <Button
+            onClick={() => {
+              const nextPage = currentPage + 1
+              setCurrentPage(nextPage)
+              loadTransactions(nextPage)
+            }}
+            disabled={isLoadingMore}
+            className="gradient-purple border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl"
+          >
+            {isLoadingMore && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {isLoadingMore ? "Loading..." : "Load More"}
+          </Button>
+        </div>
+      )}
 
       {/* Empty State */}
       {filteredTransactions.length === 0 && !isLoading && (

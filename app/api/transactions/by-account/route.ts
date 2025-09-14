@@ -23,6 +23,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get("accountId")
+    const startDateParam = searchParams.get("startDate")
+    const endDateParam = searchParams.get("endDate")
     const limit = Number.parseInt(searchParams.get("limit") || "50")
     const offset = Number.parseInt(searchParams.get("offset") || "0")
 
@@ -30,29 +32,62 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Account ID required" }, { status: 400 })
     }
 
+    if (Number.isNaN(limit) || Number.isNaN(offset) || limit < 0 || offset < 0) {
+      return NextResponse.json({ error: "Limit and offset must be non-negative integers" }, { status: 400 })
+    }
+
+    let startDate: Date | undefined
+    if (startDateParam) {
+      startDate = new Date(startDateParam)
+      if (isNaN(startDate.getTime())) {
+        return NextResponse.json({ error: "Invalid startDate" }, { status: 400 })
+      }
+    }
+
+    let endDate: Date | undefined
+    if (endDateParam) {
+      endDate = new Date(endDateParam)
+      if (isNaN(endDate.getTime())) {
+        return NextResponse.json({ error: "Invalid endDate" }, { status: 400 })
+      }
+    }
+
+    const conditions = [sql`t.user_id = ${userId}`, sql`t.account_id = ${accountId}`]
+    if (startDate && endDate) {
+      conditions.push(sql`t.transaction_date BETWEEN ${startDate} AND ${endDate}`)
+    } else if (startDate) {
+      conditions.push(sql`t.transaction_date >= ${startDate}`)
+    } else if (endDate) {
+      conditions.push(sql`t.transaction_date <= ${endDate}`)
+    }
+
+    const whereClause = sql.join(conditions, sql` AND `)
+
     const transactions = await sql`
-      SELECT 
+      SELECT
         t.*,
         a.name as account_name,
         c.name as category_name
       FROM transactions t
       LEFT JOIN accounts a ON t.account_id = a.id
       LEFT JOIN categories c ON t.category_id = c.id
-      WHERE t.user_id = ${userId} AND t.account_id = ${accountId}
+      WHERE ${whereClause}
       ORDER BY t.transaction_date DESC, t.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `
 
     const [{ count }] = await sql`
-      SELECT COUNT(*) as count 
-      FROM transactions 
-      WHERE user_id = ${userId} AND account_id = ${accountId}
+      SELECT COUNT(*) as count
+      FROM transactions t
+      WHERE ${whereClause}
     `
+
+    const total = Number.parseInt(count as any)
 
     return NextResponse.json({
       transactions,
-      total: Number.parseInt(count),
-      hasMore: offset + limit < Number.parseInt(count),
+      total,
+      hasMore: offset + limit < total,
     })
   } catch (error) {
     console.error("Get transactions by account error:", error)

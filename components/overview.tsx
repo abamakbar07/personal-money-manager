@@ -63,13 +63,13 @@ export function Overview() {
     try {
       const [accountsData, transactionsData, budgetsData, settingsData] = await Promise.all([
         apiClient.get("/api/accounts"),
-        apiClient.get("/api/transactions"),
+        apiClient.get("/api/transactions?limit=100&offset=0"),
         apiClient.get("/api/budgets"),
         apiClient.get("/api/settings"),
       ])
 
       setAccounts(accountsData || [])
-      setTransactions(transactionsData || [])
+      setTransactions(transactionsData?.transactions || transactionsData || [])
       setBudgets(budgetsData || [])
       setMonthlyStartDay(settingsData?.monthly_start_day || 1)
     } catch (error) {
