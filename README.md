@@ -24,4 +24,3 @@ Responses from `/api/transactions`, `/api/transactions/by-account`, and `/api/tr
 ```
 
 `total` represents the number of matching transactions, and `hasMore` indicates if more pages are available using the given `limit` and `offset`.
-

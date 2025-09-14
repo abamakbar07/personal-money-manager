@@ -17,6 +17,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
+import { getMonthlyDateRange } from "@/lib/utils"
 
 interface Account {
   id: string
@@ -49,6 +50,7 @@ export function Overview() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [monthlyStartDay, setMonthlyStartDay] = useState(1)
 
   useEffect(() => {
     loadData()
@@ -59,15 +61,17 @@ export function Overview() {
     setError(null)
 
     try {
-      const [accountsData, transactionsData, budgetsData] = await Promise.all([
+      const [accountsData, transactionsData, budgetsData, settingsData] = await Promise.all([
         apiClient.get("/api/accounts"),
         apiClient.get("/api/transactions?limit=100&offset=0"),
         apiClient.get("/api/budgets"),
+        apiClient.get("/api/settings"),
       ])
 
       setAccounts(accountsData || [])
       setTransactions(transactionsData?.transactions || transactionsData || [])
       setBudgets(budgetsData || [])
+      setMonthlyStartDay(settingsData?.monthly_start_day || 1)
     } catch (error) {
       console.error("Error loading overview data:", error)
       setError("Failed to load overview data. Please refresh the page.")
@@ -80,39 +84,8 @@ export function Overview() {
 
   const getFilteredTransactions = () => {
     const now = new Date()
-
-    const getCustomMonthRange = () => {
-      const currentDate = now.getDate()
-      let startMonth, startYear, endMonth, endYear
-
-      if (currentDate >= 25) {
-        startMonth = now.getMonth()
-        startYear = now.getFullYear()
-        endMonth = now.getMonth() + 1
-        endYear = now.getFullYear()
-      } else {
-        startMonth = now.getMonth() - 1
-        startYear = now.getFullYear()
-        endMonth = now.getMonth()
-        endYear = now.getFullYear()
-      }
-
-      if (startMonth < 0) {
-        startMonth = 11
-        startYear--
-      }
-      if (endMonth > 11) {
-        endMonth = 0
-        endYear++
-      }
-
-      const startDate = new Date(startYear, startMonth, 25)
-      const endDate = new Date(endYear, endMonth, 24, 23, 59, 59)
-
-      return { startDate, endDate }
-    }
-
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()))
+    const startOfWeek = new Date(now)
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay())
 
     return transactions.filter((transaction) => {
       const transactionDate = new Date(transaction.transaction_date)
@@ -120,7 +93,7 @@ export function Overview() {
         case "thisWeek":
           return transactionDate >= startOfWeek
         case "thisMonth":
-          const { startDate, endDate } = getCustomMonthRange()
+          const { startDate, endDate } = getMonthlyDateRange(monthlyStartDay, new Date())
           return transactionDate >= startDate && transactionDate <= endDate
         case "last30Days":
           const thirtyDaysAgo = new Date()

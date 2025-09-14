@@ -36,6 +36,7 @@ export function Settings() {
     theme: "light",
     notificationsEnabled: true,
     autoBackup: true,
+    monthlyStartDay: 1,
   })
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -57,6 +58,7 @@ export function Settings() {
           theme: userSettings.theme || "light",
           notificationsEnabled: userSettings.notifications_enabled ?? true,
           autoBackup: userSettings.auto_backup ?? true,
+          monthlyStartDay: userSettings.monthly_start_day || 1,
         })
       }
     } catch (error) {
@@ -73,6 +75,7 @@ export function Settings() {
         theme: settings.theme,
         notificationsEnabled: settings.notificationsEnabled,
         autoBackup: settings.autoBackup,
+        monthlyStartDay: settings.monthlyStartDay,
       })
       setMessage({ type: "success", text: "Settings saved successfully!" })
     } catch (error) {
@@ -219,6 +222,27 @@ export function Settings() {
                       <SelectItem value="light">Light</SelectItem>
                       <SelectItem value="dark">Dark</SelectItem>
                       <SelectItem value="auto">Auto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-3">
+                  <Label htmlFor="monthlyStartDay">Monthly Start Day</Label>
+                  <Select
+                    value={settings.monthlyStartDay.toString()}
+                    onValueChange={(value) =>
+                      setSettings({ ...settings, monthlyStartDay: Number(value) })
+                    }
+                  >
+                    <SelectTrigger className="h-12 rounded-2xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <SelectItem key={i + 1} value={(i + 1).toString()}>
+                          {i + 1}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
