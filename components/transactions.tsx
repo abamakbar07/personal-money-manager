@@ -33,6 +33,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
+import { transactionSchema } from "@/lib/validation/transaction"
 
 interface Transaction {
   id: string
@@ -153,56 +154,21 @@ export function Transactions() {
     return categories.filter((cat) => cat.type === type)
   }
 
-  const validateForm = () => {
-    if (!formData.amount || Number.parseFloat(formData.amount) <= 0) {
-      setError("Please enter a valid amount greater than 0")
-      return false
-    }
-
-    if (!formData.description.trim()) {
-      setError("Please enter a description")
-      return false
-    }
-
-    if (!formData.category) {
-      setError("Please select a category")
-      return false
-    }
-
-    if (!formData.account) {
-      setError("Please select an account")
-      return false
-    }
-
-    if (!formData.date) {
-      setError("Please select a date")
-      return false
-    }
-
-    return true
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setSuccess(null)
-
-    if (!validateForm()) {
+    const parsed = transactionSchema.safeParse(formData)
+    if (!parsed.success) {
+      setError(parsed.error.issues.map((i) => i.message).join(", "))
       return
     }
+
+    const transactionData = parsed.data
 
     setIsSaving(true)
 
     try {
-      const transactionData = {
-        type: formData.type as "income" | "expense",
-        amount: Number.parseFloat(formData.amount),
-        description: formData.description.trim(),
-        category: formData.category,
-        account: formData.account,
-        date: formData.date,
-      }
-
       let result
       if (editingTransaction) {
         result = await apiClient.put("/api/transactions", {
