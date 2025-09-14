@@ -1,15 +1,27 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Download, FileSpreadsheet, FileText } from "lucide-react"
+import { apiClient } from "@/lib/api-client"
+import { getMonthlyDateRange } from "@/lib/utils"
 
 export function DataExport() {
   const [exportFormat, setExportFormat] = useState("xlsx")
   const [exportType, setExportType] = useState("all")
   const [dateRange, setDateRange] = useState("all")
+  const [monthlyStartDay, setMonthlyStartDay] = useState(1)
+
+  useEffect(() => {
+    apiClient
+      .get("/api/settings")
+      .then((s) => setMonthlyStartDay(s?.monthly_start_day || 1))
+      .catch(() => {})
+  }, [])
+
+  const { startDate: currentStart, endDate: currentEnd } = getMonthlyDateRange(monthlyStartDay)
 
   const exportData = () => {
     const accounts = JSON.parse(localStorage.getItem("money-manager-accounts") || "[]")
@@ -26,23 +38,7 @@ export function DataExport() {
 
       switch (dateRange) {
         case "thisMonth":
-          const currentDate = now.getDate()
-          let startMonth, startYear
-
-          if (currentDate >= 25) {
-            startMonth = now.getMonth()
-            startYear = now.getFullYear()
-          } else {
-            startMonth = now.getMonth() - 1
-            startYear = now.getFullYear()
-          }
-
-          if (startMonth < 0) {
-            startMonth = 11
-            startYear--
-          }
-
-          startDate = new Date(startYear, startMonth, 25)
+          startDate = getMonthlyDateRange(monthlyStartDay).startDate
           break
         case "last3Months":
           startDate = new Date()
@@ -254,7 +250,9 @@ export function DataExport() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="thisMonth">This Month (25th-24th)</SelectItem>
+                <SelectItem value="thisMonth">
+                  {`This Month (${currentStart.getDate()}-${currentEnd.getDate()})`}
+                </SelectItem>
                 <SelectItem value="last3Months">Last 3 Months</SelectItem>
                 <SelectItem value="thisYear">This Year</SelectItem>
               </SelectContent>

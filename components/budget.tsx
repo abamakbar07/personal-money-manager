@@ -19,6 +19,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
 import { Plus, Edit, Trash2, Target, AlertTriangle, CheckCircle } from "lucide-react"
+import { apiClient } from "@/lib/api-client"
+import { getMonthlyDateRange } from "@/lib/utils"
 
 interface Budget {
   id: string
@@ -32,6 +34,7 @@ interface Budget {
 export function Budget() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [transactions, setTransactions] = useState([])
+  const [monthlyStartDay, setMonthlyStartDay] = useState(1)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
   const [formData, setFormData] = useState({
@@ -59,6 +62,11 @@ export function Budget() {
     const storedTransactions = JSON.parse(localStorage.getItem("money-manager-transactions") || "[]")
     setBudgets(storedBudgets)
     setTransactions(storedTransactions)
+
+    apiClient
+      .get("/api/settings")
+      .then((s) => setMonthlyStartDay(s?.monthly_start_day || 1))
+      .catch(() => {})
   }, [])
 
   const saveBudgets = (newBudgets: Budget[]) => {
@@ -77,33 +85,9 @@ export function Budget() {
         endDate.setDate(startDate.getDate() + 6)
         break
       case "monthly":
-        // Custom month: 25th to 24th
-        const currentDate = now.getDate()
-        let startMonth, startYear, endMonth, endYear
-
-        if (currentDate >= 25) {
-          startMonth = now.getMonth()
-          startYear = now.getFullYear()
-          endMonth = now.getMonth() + 1
-          endYear = now.getFullYear()
-        } else {
-          startMonth = now.getMonth() - 1
-          startYear = now.getFullYear()
-          endMonth = now.getMonth()
-          endYear = now.getFullYear()
-        }
-
-        if (startMonth < 0) {
-          startMonth = 11
-          startYear--
-        }
-        if (endMonth > 11) {
-          endMonth = 0
-          endYear++
-        }
-
-        startDate = new Date(startYear, startMonth, 25)
-        endDate = new Date(endYear, endMonth, 24)
+        const { startDate: start, endDate: end } = getMonthlyDateRange(monthlyStartDay)
+        startDate = start
+        endDate = end
         break
       case "yearly":
         startDate = new Date(now.getFullYear(), 0, 1)

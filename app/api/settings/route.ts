@@ -35,8 +35,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const settings = await request.json()
-    await updateUserSettings(userId, settings)
+    const { currency, dateFormat, theme, notificationsEnabled, autoBackup, monthlyStartDay } = await request.json()
+    await updateUserSettings(userId, {
+      currency,
+      dateFormat,
+      theme,
+      notificationsEnabled,
+      autoBackup,
+      monthlyStartDay,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
