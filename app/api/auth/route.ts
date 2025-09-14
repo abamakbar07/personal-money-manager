@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createOrGetUser, verifyUser, createSession, verifySession } from "@/lib/auth"
+import { registerUser, authenticateUser, createSession, verifySession, changePassword } from "@/lib/auth"
 
 function getDeviceId(request: NextRequest): string {
   return request.headers.get("x-device-id") || request.headers.get("user-agent") || "unknown-device"
@@ -22,7 +22,7 @@ function getDeviceInfo(request: NextRequest): any {
 
 export async function POST(request: NextRequest) {
   try {
-    const { action, pin, sessionToken, deviceInfo } = await request.json()
+    const { action, identifier, password, newPassword, sessionToken, deviceInfo } = await request.json()
     const deviceId = getDeviceId(request)
     const deviceInfoFromHeader = getDeviceInfo(request)
     const finalDeviceInfo = deviceInfo || deviceInfoFromHeader
@@ -37,55 +37,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, authenticated: false })
     }
 
-    if (action === "authenticate") {
+    if (action === "register") {
       try {
-        // Try to authenticate with existing user or create new one
-        const result = await createOrGetUser(pin)
-        const sessionToken = await createSession(result.userId, deviceId, finalDeviceInfo)
-
-        return NextResponse.json({
-          success: true,
-          userId: result.userId,
-          sessionToken,
-          isDefaultPin: result.isDefaultPin,
-          isNewUser: result.isNewUser,
-        })
+        const userId = await registerUser(identifier, password)
+        const sessionToken = await createSession(userId, deviceId, finalDeviceInfo)
+        return NextResponse.json({ success: true, userId, sessionToken })
       } catch (error) {
-        // If PIN is wrong for existing user, try verification
-        const result = await verifyUser(pin)
-        if (result) {
-          const sessionToken = await createSession(result.userId, deviceId, finalDeviceInfo)
-          return NextResponse.json({
-            success: true,
-            userId: result.userId,
-            sessionToken,
-            isDefaultPin: result.isDefaultPin,
-            isNewUser: false,
-          })
-        } else {
-          return NextResponse.json({ success: false, error: "Invalid PIN" }, { status: 401 })
-        }
+        return NextResponse.json({ success: false, error: "Registration failed" }, { status: 400 })
       }
     }
 
-    if (action === "change-pin") {
-      const sessionToken = request.headers.get("authorization")?.replace("Bearer ", "")
-      if (!sessionToken) {
+    if (action === "login") {
+      const userId = await authenticateUser(identifier, password)
+      if (userId) {
+        const sessionToken = await createSession(userId, deviceId, finalDeviceInfo)
+        return NextResponse.json({ success: true, userId, sessionToken })
+      }
+      return NextResponse.json({ success: false, error: "Invalid credentials" }, { status: 401 })
+    }
+
+    if (action === "change-password") {
+      const token = request.headers.get("authorization")?.replace("Bearer ", "")
+      if (!token) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
       }
 
-      const userId = await verifySession(sessionToken, deviceId)
+      const userId = await verifySession(token, deviceId)
       if (!userId) {
         return NextResponse.json({ error: "Invalid session" }, { status: 401 })
       }
 
-      const { changePin } = await import("@/lib/auth")
-      const success = await changePin(userId, pin)
-
+      const success = await changePassword(userId, newPassword || password)
       if (success) {
         return NextResponse.json({ success: true })
       } else {
-        return NextResponse.json({ success: false, error: "Failed to change PIN" }, { status: 500 })
+        return NextResponse.json({ success: false, error: "Failed to change password" }, { status: 500 })
       }
     }
 

@@ -3,7 +3,10 @@
 -- Users table for future multi-user support
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    pin_hash VARCHAR(255) NOT NULL,
+    username VARCHAR(100) UNIQUE,
+    email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    CHECK (username IS NOT NULL OR email IS NOT NULL),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

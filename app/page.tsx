@@ -1,14 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { PinAuth } from "@/components/pin-auth"
+import { BasicAuth } from "@/components/basic-auth"
 import { Dashboard } from "@/components/dashboard"
 import { apiClient } from "@/lib/api-client"
 
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
-  const [isDefaultPin, setIsDefaultPin] = useState(false)
 
   useEffect(() => {
     checkAuthentication()
@@ -19,8 +18,6 @@ export default function Home() {
       const result = await apiClient.checkSession()
       if (result.authenticated) {
         setIsAuthenticated(true)
-        // We don't know if it's default PIN from session, so assume false
-        setIsDefaultPin(false)
       }
     } catch (error) {
       console.error("Auth check error:", error)
@@ -29,14 +26,12 @@ export default function Home() {
     }
   }
 
-  const handleAuthenticated = (defaultPin: boolean, isNewUser: boolean) => {
+  const handleAuthenticated = () => {
     setIsAuthenticated(true)
-    setIsDefaultPin(defaultPin)
   }
 
   const handleLogout = () => {
     setIsAuthenticated(false)
-    setIsDefaultPin(false)
   }
 
   if (isLoading) {
@@ -51,8 +46,8 @@ export default function Home() {
   }
 
   if (!isAuthenticated) {
-    return <PinAuth onAuthenticated={handleAuthenticated} />
+    return <BasicAuth onAuthenticated={handleAuthenticated} />
   }
 
-  return <Dashboard onLogout={handleLogout} isDefaultPin={isDefaultPin} />
+  return <Dashboard onLogout={handleLogout} />
 }

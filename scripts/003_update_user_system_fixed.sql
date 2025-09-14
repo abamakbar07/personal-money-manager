@@ -1,17 +1,30 @@
--- Update user system for multi-device support
-DO $$ 
+DO $$
 BEGIN
+    -- Rename legacy column if it exists
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'pin_hash') THEN
+        ALTER TABLE users RENAME COLUMN pin_hash TO password_hash;
+    END IF;
+
     -- Add columns if they don't exist
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'username') THEN
         ALTER TABLE users ADD COLUMN username VARCHAR(100) UNIQUE;
     END IF;
-    
+
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'email') THEN
         ALTER TABLE users ADD COLUMN email VARCHAR(255) UNIQUE;
     END IF;
-    
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'is_default_pin') THEN
-        ALTER TABLE users ADD COLUMN is_default_pin BOOLEAN DEFAULT TRUE;
+
+    -- Remove PIN related column if present
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'is_default_pin') THEN
+        ALTER TABLE users DROP COLUMN is_default_pin;
+    END IF;
+
+    -- Ensure at least one identifier is provided
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'users' AND constraint_name = 'users_username_or_email_not_null'
+    ) THEN
+        ALTER TABLE users ADD CONSTRAINT users_username_or_email_not_null CHECK (username IS NOT NULL OR email IS NOT NULL);
     END IF;
 END $$;
 
