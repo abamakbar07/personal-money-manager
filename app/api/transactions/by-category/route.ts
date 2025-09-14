@@ -24,60 +24,97 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get("categoryId")
     const categoryName = searchParams.get("categoryName")
+    const startDateParam = searchParams.get("startDate")
+    const endDateParam = searchParams.get("endDate")
     const limit = Number.parseInt(searchParams.get("limit") || "50")
     const offset = Number.parseInt(searchParams.get("offset") || "0")
 
+    if (Number.isNaN(limit) || Number.isNaN(offset) || limit < 0 || offset < 0) {
+      return NextResponse.json({ error: "Limit and offset must be non-negative integers" }, { status: 400 })
+    }
+
+    let startDate: Date | undefined
+    if (startDateParam) {
+      startDate = new Date(startDateParam)
+      if (isNaN(startDate.getTime())) {
+        return NextResponse.json({ error: "Invalid startDate" }, { status: 400 })
+      }
+    }
+
+    let endDate: Date | undefined
+    if (endDateParam) {
+      endDate = new Date(endDateParam)
+      if (isNaN(endDate.getTime())) {
+        return NextResponse.json({ error: "Invalid endDate" }, { status: 400 })
+      }
+    }
+
     let transactions, count
 
+    const conditionsBase = []
+    if (startDate && endDate) {
+      conditionsBase.push(sql`t.transaction_date BETWEEN ${startDate} AND ${endDate}`)
+    } else if (startDate) {
+      conditionsBase.push(sql`t.transaction_date >= ${startDate}`)
+    } else if (endDate) {
+      conditionsBase.push(sql`t.transaction_date <= ${endDate}`)
+    }
+
     if (categoryId) {
+      const conditions = [sql`t.user_id = ${userId}`, sql`t.category_id = ${categoryId}`, ...conditionsBase]
+      const where = sql.join(conditions, sql` AND `)
       transactions = await sql`
-        SELECT 
+        SELECT
           t.*,
           a.name as account_name,
           c.name as category_name
         FROM transactions t
         LEFT JOIN accounts a ON t.account_id = a.id
         LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = ${userId} AND t.category_id = ${categoryId}
+        WHERE ${where}
         ORDER BY t.transaction_date DESC, t.created_at DESC
         LIMIT ${limit} OFFSET ${offset}
       `
 
       const [countResult] = await sql`
-        SELECT COUNT(*) as count 
-        FROM transactions 
-        WHERE user_id = ${userId} AND category_id = ${categoryId}
+        SELECT COUNT(*) as count
+        FROM transactions t
+        WHERE ${where}
       `
       count = countResult.count
     } else if (categoryName) {
+      const conditions = [sql`t.user_id = ${userId}`, sql`c.name = ${categoryName}`, ...conditionsBase]
+      const where = sql.join(conditions, sql` AND `)
       transactions = await sql`
-        SELECT 
+        SELECT
           t.*,
           a.name as account_name,
           c.name as category_name
         FROM transactions t
         LEFT JOIN accounts a ON t.account_id = a.id
         LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = ${userId} AND c.name = ${categoryName}
+        WHERE ${where}
         ORDER BY t.transaction_date DESC, t.created_at DESC
         LIMIT ${limit} OFFSET ${offset}
       `
 
       const [countResult] = await sql`
-        SELECT COUNT(*) as count 
+        SELECT COUNT(*) as count
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = ${userId} AND c.name = ${categoryName}
+        WHERE ${where}
       `
       count = countResult.count
     } else {
       return NextResponse.json({ error: "Category ID or name required" }, { status: 400 })
     }
 
+    const total = Number.parseInt(count as any)
+
     return NextResponse.json({
       transactions,
-      total: Number.parseInt(count),
-      hasMore: offset + limit < Number.parseInt(count),
+      total,
+      hasMore: offset + limit < total,
     })
   } catch (error) {
     console.error("Get transactions by category error:", error)

@@ -66,11 +66,11 @@ export function Transfer() {
     try {
       const [accountsData, transactionsData] = await Promise.all([
         apiClient.get("/api/accounts"),
-        apiClient.get("/api/transactions"),
+        apiClient.get("/api/transactions?limit=100&offset=0"),
       ])
 
       setAccounts(accountsData || [])
-      setTransactions(transactionsData || [])
+      setTransactions(transactionsData?.transactions || transactionsData || [])
     } catch (error) {
       console.error("Error loading data:", error)
       setError("Failed to load account data. Please refresh the page.")

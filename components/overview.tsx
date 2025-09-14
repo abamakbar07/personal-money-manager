@@ -61,12 +61,12 @@ export function Overview() {
     try {
       const [accountsData, transactionsData, budgetsData] = await Promise.all([
         apiClient.get("/api/accounts"),
-        apiClient.get("/api/transactions"),
+        apiClient.get("/api/transactions?limit=100&offset=0"),
         apiClient.get("/api/budgets"),
       ])
 
       setAccounts(accountsData || [])
-      setTransactions(transactionsData || [])
+      setTransactions(transactionsData?.transactions || transactionsData || [])
       setBudgets(budgetsData || [])
     } catch (error) {
       console.error("Error loading overview data:", error)

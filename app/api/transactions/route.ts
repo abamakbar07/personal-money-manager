@@ -20,9 +20,48 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    const { searchParams } = new URL(request.url)
+    const startDateParam = searchParams.get("startDate")
+    const endDateParam = searchParams.get("endDate")
+    const limitParam = searchParams.get("limit")
+    const offsetParam = searchParams.get("offset")
+
+    const limit = Number.parseInt(limitParam || "50")
+    const offset = Number.parseInt(offsetParam || "0")
+
+    if (Number.isNaN(limit) || Number.isNaN(offset) || limit < 0 || offset < 0) {
+      return NextResponse.json({ error: "Limit and offset must be non-negative integers" }, { status: 400 })
+    }
+
+    let startDate: Date | undefined
+    if (startDateParam) {
+      startDate = new Date(startDateParam)
+      if (isNaN(startDate.getTime())) {
+        return NextResponse.json({ error: "Invalid startDate" }, { status: 400 })
+      }
+    }
+
+    let endDate: Date | undefined
+    if (endDateParam) {
+      endDate = new Date(endDateParam)
+      if (isNaN(endDate.getTime())) {
+        return NextResponse.json({ error: "Invalid endDate" }, { status: 400 })
+      }
+    }
+
+    const conditions = []
+    if (startDate && endDate) {
+      conditions.push(sql`t.transaction_date BETWEEN ${startDate} AND ${endDate}`)
+    } else if (startDate) {
+      conditions.push(sql`t.transaction_date >= ${startDate}`)
+    } else if (endDate) {
+      conditions.push(sql`t.transaction_date <= ${endDate}`)
+    }
+
+    const whereClause = conditions.length > 0 ? sql`AND ${sql.join(conditions, sql` AND `)}` : sql``
 
     const transactions = await sql`
-      SELECT 
+      SELECT
         t.id,
         t.type,
         t.amount,
@@ -36,11 +75,24 @@ export async function GET(request: NextRequest) {
       FROM transactions t
       LEFT JOIN accounts a ON t.account_id = a.id
       LEFT JOIN categories c ON t.category_id = c.id
-      WHERE t.user_id = ${userId}
+      WHERE t.user_id = ${userId} ${whereClause}
       ORDER BY t.transaction_date DESC, t.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
     `
 
-    return NextResponse.json(transactions)
+    const [{ count }] = await sql`
+      SELECT COUNT(*) as count
+      FROM transactions t
+      WHERE t.user_id = ${userId} ${whereClause}
+    `
+
+    const total = Number.parseInt(count as any)
+
+    return NextResponse.json({
+      transactions,
+      total,
+      hasMore: offset + limit < total,
+    })
   } catch (error) {
     console.error("Get transactions error:", error)
     return NextResponse.json({ error: "Failed to load transactions" }, { status: 500 })
