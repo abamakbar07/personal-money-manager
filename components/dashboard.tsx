@@ -2,8 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { LogOut, Menu, Shield } from "lucide-react"
+import { LogOut, Menu } from "lucide-react"
 import { Overview } from "@/components/overview"
 import { Transactions } from "@/components/transactions"
 import { Transfer } from "@/components/transfer"
@@ -17,13 +16,11 @@ import { apiClient } from "@/lib/api-client"
 
 interface DashboardProps {
   onLogout: () => void
-  isDefaultPin: boolean
 }
 
-export function Dashboard({ onLogout, isDefaultPin }: DashboardProps) {
+export function Dashboard({ onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState("overview")
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [showPinWarning, setShowPinWarning] = useState(isDefaultPin)
   const [transactionHistoryProps, setTransactionHistoryProps] = useState<{
     accountId?: string
     accountName?: string
@@ -76,35 +73,6 @@ export function Dashboard({ onLogout, isDefaultPin }: DashboardProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-50 to-neutral-100">
-      {/* PIN Warning */}
-      {showPinWarning && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4">
-          <Alert className="border-yellow-200 bg-yellow-50 shadow-lg">
-            <Shield className="h-4 w-4 text-yellow-600" />
-            <AlertDescription className="text-yellow-800">
-              You're using the default PIN (2369). Please change it in Settings for better security.
-              <Button
-                variant="link"
-                className="p-0 h-auto text-yellow-700 underline ml-2"
-                onClick={() => {
-                  setActiveTab("settings")
-                  setShowPinWarning(false)
-                }}
-              >
-                Change Now
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-2 h-6 w-6 p-0 text-yellow-600 hover:bg-yellow-100"
-                onClick={() => setShowPinWarning(false)}
-              >
-                ×
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
 
       {/* Mobile Header */}
       <header className="lg:hidden bg-white/80 backdrop-blur-md border-b border-neutral-200/50 px-4 py-3 sticky top-0 z-40">

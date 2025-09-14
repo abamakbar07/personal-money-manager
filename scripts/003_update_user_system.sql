@@ -1,7 +1,8 @@
--- Update user system for multi-device support
+ALTER TABLE users RENAME COLUMN pin_hash TO password_hash;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(100) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS is_default_pin BOOLEAN DEFAULT TRUE;
+ALTER TABLE users DROP COLUMN IF EXISTS is_default_pin;
+ALTER TABLE users ADD CONSTRAINT IF NOT EXISTS users_username_or_email_not_null CHECK (username IS NOT NULL OR email IS NOT NULL);
 
 -- Create user sessions table for multi-device support
 CREATE TABLE IF NOT EXISTS user_sessions (

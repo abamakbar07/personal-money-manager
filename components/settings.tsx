@@ -37,10 +37,9 @@ export function Settings() {
     notificationsEnabled: true,
     autoBackup: true,
   })
-  const [newPin, setNewPin] = useState("")
-  const [confirmNewPin, setConfirmNewPin] = useState("")
-  const [currentPin, setCurrentPin] = useState("")
-  const [showPinForm, setShowPinForm] = useState(false)
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
@@ -84,33 +83,30 @@ export function Settings() {
     }
   }
 
-  const handlePinChange = async (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (newPin.length < 4) {
-      setMessage({ type: "error", text: "PIN must be at least 4 digits" })
+    if (newPassword.length < 6) {
+      setMessage({ type: "error", text: "Password must be at least 6 characters" })
       return
     }
-
-    if (newPin !== confirmNewPin) {
-      setMessage({ type: "error", text: "PINs do not match" })
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: "error", text: "Passwords do not match" })
       return
     }
 
     setIsLoading(true)
     try {
-      const result = await apiClient.changePin(newPin)
+      const result = await apiClient.changePassword(newPassword)
       if (result.success) {
-        setMessage({ type: "success", text: "PIN changed successfully!" })
-        setShowPinForm(false)
-        setNewPin("")
-        setConfirmNewPin("")
-        setCurrentPin("")
+        setMessage({ type: "success", text: "Password changed successfully!" })
+        setShowPasswordForm(false)
+        setNewPassword("")
+        setConfirmPassword("")
       } else {
-        setMessage({ type: "error", text: result.error || "Failed to change PIN" })
+        setMessage({ type: "error", text: result.error || "Failed to change password" })
       }
     } catch (error) {
-      setMessage({ type: "error", text: "Failed to change PIN" })
+      setMessage({ type: "error", text: "Failed to change password" })
     } finally {
       setIsLoading(false)
       setTimeout(() => setMessage(null), 3000)
@@ -279,49 +275,48 @@ export function Settings() {
                 <Shield className="h-5 w-5" />
                 Security Settings
               </CardTitle>
-              <CardDescription>Manage your PIN and security preferences</CardDescription>
+              <CardDescription>Manage your password and security preferences</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {!showPinForm ? (
+              {!showPasswordForm ? (
                 <div className="space-y-4">
                   <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200">
-                    <h4 className="font-semibold text-blue-800 mb-2">PIN Protection</h4>
+                    <h4 className="font-semibold text-blue-800 mb-2">Password</h4>
                     <p className="text-blue-700 text-sm mb-4">
-                      Your PIN protects access to your financial data across all devices. Choose a secure PIN that you
-                      can remember.
+                      Your password protects access to your financial data across all devices.
                     </p>
                     <Button
-                      onClick={() => setShowPinForm(true)}
+                      onClick={() => setShowPasswordForm(true)}
                       className="gradient-blue border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl"
                     >
-                      Change PIN
+                      Change Password
                     </Button>
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handlePinChange} className="space-y-6">
+                <form onSubmit={handlePasswordChange} className="space-y-6">
                   <div className="space-y-4">
                     <div className="space-y-3">
-                      <Label htmlFor="newPin">New PIN</Label>
+                      <Label htmlFor="newPassword">New Password</Label>
                       <Input
-                        id="newPin"
+                        id="newPassword"
                         type="password"
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Enter new PIN"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Enter new password"
                         className="h-12 rounded-2xl"
                         required
                       />
                     </div>
 
                     <div className="space-y-3">
-                      <Label htmlFor="confirmNewPin">Confirm New PIN</Label>
+                      <Label htmlFor="confirmPassword">Confirm New Password</Label>
                       <Input
-                        id="confirmNewPin"
+                        id="confirmPassword"
                         type="password"
-                        value={confirmNewPin}
-                        onChange={(e) => setConfirmNewPin(e.target.value)}
-                        placeholder="Confirm new PIN"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Confirm new password"
                         className="h-12 rounded-2xl"
                         required
                       />
@@ -334,16 +329,15 @@ export function Settings() {
                       disabled={isLoading}
                       className="gradient-green border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl"
                     >
-                      {isLoading ? "Changing..." : "Change PIN"}
+                      {isLoading ? "Changing..." : "Change Password"}
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => {
-                        setShowPinForm(false)
-                        setNewPin("")
-                        setConfirmNewPin("")
-                        setCurrentPin("")
+                        setShowPasswordForm(false)
+                        setNewPassword("")
+                        setConfirmPassword("")
                       }}
                       className="rounded-2xl"
                     >

@@ -1,8 +1,6 @@
 import { sql } from "./database"
 import bcrypt from "bcryptjs"
 
-const DEFAULT_PIN = "2369"
-
 // Generate a simple UUID without external dependency
 function generateUUID(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -41,42 +39,29 @@ function generateUserFingerprint(): string {
   return Math.abs(hash).toString(36)
 }
 
-export async function createOrGetUser(
-  pin?: string,
-): Promise<{ userId: string; isDefaultPin: boolean; isNewUser: boolean }> {
-  const actualPin = pin || DEFAULT_PIN
-  const isDefaultPin = !pin || pin === DEFAULT_PIN
+export async function registerUser(identifier: string, password: string): Promise<string> {
+  const passwordHash = await bcrypt.hash(password, 10)
+  let user
 
-  // First, try to find existing user
-  const users = await sql`SELECT id, pin_hash, is_default_pin FROM users ORDER BY created_at DESC LIMIT 1`
-
-  if (users.length > 0) {
-    // User exists, verify PIN
-    const user = users[0]
-    const isValid = await bcrypt.compare(actualPin, user.pin_hash)
-    if (isValid) {
-      return { userId: user.id, isDefaultPin: user.is_default_pin, isNewUser: false }
-    } else {
-      throw new Error("Invalid PIN")
-    }
+  if (identifier.includes("@")) {
+    ;[user] = await sql`
+      INSERT INTO users (email, password_hash)
+      VALUES (${identifier}, ${passwordHash})
+      RETURNING id
+    `
+  } else {
+    ;[user] = await sql`
+      INSERT INTO users (username, password_hash)
+      VALUES (${identifier}, ${passwordHash})
+      RETURNING id
+    `
   }
 
-  // No user exists, create new one
-  const pinHash = await bcrypt.hash(actualPin, 10)
-
-  const [user] = await sql`
-    INSERT INTO users (pin_hash, is_default_pin)
-    VALUES (${pinHash}, ${isDefaultPin})
-    RETURNING id
-  `
-
-  // Create default user settings
   await sql`
     INSERT INTO user_settings (user_id)
     VALUES (${user.id})
   `
 
-  // Create default categories for the new user
   await sql`
     INSERT INTO categories (user_id, name, type, color, is_default) VALUES
     (${user.id}, 'Food & Dining', 'expense', 'red', true),
@@ -98,22 +83,22 @@ export async function createOrGetUser(
     (${user.id}, 'Other', 'income', 'gray', true)
   `
 
-  return { userId: user.id, isDefaultPin, isNewUser: true }
+  return user.id
 }
 
-export async function verifyUser(pin: string): Promise<{ userId: string; isDefaultPin: boolean } | null> {
-  const users = await sql`
-    SELECT id, pin_hash, is_default_pin FROM users ORDER BY created_at DESC
-  `
+export async function authenticateUser(identifier: string, password: string): Promise<string | null> {
+  let user
 
-  for (const user of users) {
-    const isValid = await bcrypt.compare(pin, user.pin_hash)
-    if (isValid) {
-      return { userId: user.id, isDefaultPin: user.is_default_pin }
-    }
+  if (identifier.includes("@")) {
+    ;[user] = await sql`SELECT id, password_hash FROM users WHERE email = ${identifier}`
+  } else {
+    ;[user] = await sql`SELECT id, password_hash FROM users WHERE username = ${identifier}`
   }
 
-  return null
+  if (!user) return null
+
+  const isValid = await bcrypt.compare(password, user.password_hash)
+  return isValid ? user.id : null
 }
 
 export async function createSession(userId: string, deviceId: string, deviceInfo?: any): Promise<string> {
@@ -199,17 +184,17 @@ export async function revokeAllSessions(userId: string, exceptDeviceId?: string)
   }
 }
 
-export async function changePin(userId: string, newPin: string): Promise<boolean> {
+export async function changePassword(userId: string, newPassword: string): Promise<boolean> {
   try {
-    const pinHash = await bcrypt.hash(newPin, 10)
+    const passwordHash = await bcrypt.hash(newPassword, 10)
     await sql`
-      UPDATE users 
-      SET pin_hash = ${pinHash}, is_default_pin = false
+      UPDATE users
+      SET password_hash = ${passwordHash}
       WHERE id = ${userId}
     `
     return true
   } catch (error) {
-    console.error("Error changing PIN:", error)
+    console.error("Error changing password:", error)
     return false
   }
 }

@@ -202,13 +202,14 @@ class ApiClient {
     }
   }
 
-  async authenticate(pin: string): Promise<any> {
+  async register(identifier: string, password: string): Promise<any> {
     const response = await fetch("/api/auth", {
       method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify({
-        action: "authenticate",
-        pin,
+        action: "register",
+        identifier,
+        password,
         deviceInfo: this.deviceInfo,
       }),
     })
@@ -217,20 +218,41 @@ class ApiClient {
 
     if (data.success && data.sessionToken) {
       this.setSessionToken(data.sessionToken)
-      // Start syncing after successful authentication
       this.triggerSync()
     }
 
     return data
   }
 
-  async changePin(newPin: string): Promise<any> {
+  async login(identifier: string, password: string): Promise<any> {
     const response = await fetch("/api/auth", {
       method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify({
-        action: "change-pin",
-        pin: newPin,
+        action: "login",
+        identifier,
+        password,
+        deviceInfo: this.deviceInfo,
+      }),
+    })
+
+    const data = await response.json()
+
+    if (data.success && data.sessionToken) {
+      this.setSessionToken(data.sessionToken)
+      this.triggerSync()
+    }
+
+    return data
+  }
+
+  async changePassword(newPassword: string): Promise<any> {
+    const response = await fetch("/api/auth", {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        action: "change-password",
+        newPassword,
       }),
     })
 

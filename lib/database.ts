@@ -11,7 +11,9 @@ export { sql }
 // Database types
 export interface User {
   id: string
-  pin_hash: string
+  username?: string
+  email?: string
+  password_hash: string
   created_at: string
   updated_at: string
 }
