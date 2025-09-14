@@ -25,9 +25,22 @@ CREATE TABLE IF NOT EXISTS user_settings (
     theme VARCHAR(20) DEFAULT 'light',
     notifications_enabled BOOLEAN DEFAULT TRUE,
     auto_backup BOOLEAN DEFAULT TRUE,
+    monthly_start_day INTEGER DEFAULT 1 CHECK (monthly_start_day BETWEEN 1 AND 31),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Ensure monthly_start_day column exists for existing installations
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user_settings' AND column_name = 'monthly_start_day'
+    ) THEN
+        ALTER TABLE user_settings
+            ADD COLUMN monthly_start_day INTEGER DEFAULT 1 CHECK (monthly_start_day BETWEEN 1 AND 31);
+    END IF;
+END $$;
 
 -- Add indexes for performance
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);

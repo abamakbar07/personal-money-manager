@@ -201,19 +201,21 @@ export async function changePassword(userId: string, newPassword: string): Promi
 
 export async function getUserSettings(userId: string) {
   const [settings] = await sql`
-    SELECT * FROM user_settings WHERE user_id = ${userId}
+    SELECT currency, date_format, theme, notifications_enabled, auto_backup, monthly_start_day
+    FROM user_settings WHERE user_id = ${userId}
   `
   return settings
 }
 
 export async function updateUserSettings(userId: string, settings: any) {
   await sql`
-    UPDATE user_settings 
+    UPDATE user_settings
     SET currency = ${settings.currency || "IDR"},
         date_format = ${settings.dateFormat || "DD/MM/YYYY"},
         theme = ${settings.theme || "light"},
         notifications_enabled = ${settings.notificationsEnabled || true},
-        auto_backup = ${settings.autoBackup || true}
+        auto_backup = ${settings.autoBackup || true},
+        monthly_start_day = ${settings.monthlyStartDay || 1}
     WHERE user_id = ${userId}
   `
 }
