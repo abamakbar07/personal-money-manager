@@ -1,4 +1,7 @@
-import { neon } from "@neondatabase/serverless"
+import { neon, Client, neonConfig } from "@neondatabase/serverless"
+import ws from "ws"
+
+neonConfig.webSocketConstructor = ws
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set")
@@ -7,6 +10,22 @@ if (!process.env.DATABASE_URL) {
 const sql = neon(process.env.DATABASE_URL)
 
 export { sql }
+
+export async function withTransaction<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+  const client = new Client(process.env.DATABASE_URL)
+  await client.connect()
+  try {
+    await client.query("BEGIN")
+    const result = await fn(client)
+    await client.query("COMMIT")
+    return result
+  } catch (error) {
+    await client.query("ROLLBACK")
+    throw error
+  } finally {
+    await client.end()
+  }
+}
 
 // Database types
 export interface User {
