@@ -132,9 +132,8 @@ export async function POST(request: NextRequest) {
           UPDATE accounts SET balance = balance - ${amount}, updated_at = NOW() WHERE id = ${account} AND user_id = ${userId}
         `
       }
-
-      return transaction
-    })
+      throw error
+    }
 
     return NextResponse.json(result)
   } catch (error) {
@@ -221,10 +220,10 @@ export async function PUT(request: NextRequest) {
         await tx`
           UPDATE accounts SET balance = balance - ${amount}, updated_at = NOW() WHERE id = ${account}
         `
-      }
 
-      return transaction
-    })
+      }
+      throw error
+    }
 
     return NextResponse.json(result)
   } catch (error) {
@@ -277,9 +276,8 @@ export async function DELETE(request: NextRequest) {
           UPDATE accounts SET balance = balance + ${transaction.amount}, updated_at = NOW() WHERE id = ${transaction.account_id}
         `
       }
-
-      return { success: true }
-    })
+      throw error
+    }
 
     return NextResponse.json(result)
   } catch (error) {

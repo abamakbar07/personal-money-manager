@@ -145,10 +145,22 @@ export async function PUT(request: NextRequest) {
             )
           `
         }
-      }
 
-      return account
-    })
+        return account
+      })
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Connection terminated unexpectedly")
+      ) {
+        console.error("Update account error:", error)
+        return NextResponse.json(
+          { error: "Database connection lost; please retry" },
+          { status: 503 },
+        )
+      }
+      throw error
+    }
 
     return NextResponse.json(result)
   } catch (error) {
@@ -187,9 +199,21 @@ export async function DELETE(request: NextRequest) {
       await tx`
         DELETE FROM accounts WHERE id = ${id} AND user_id = ${userId}
       `
-
-      return { success: true }
-    })
+        return { success: true }
+      })
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Connection terminated unexpectedly")
+      ) {
+        console.error("Delete account error:", error)
+        return NextResponse.json(
+          { error: "Database connection lost; please retry" },
+          { status: 503 },
+        )
+      }
+      throw error
+    }
 
     return NextResponse.json(result)
   } catch (error) {
