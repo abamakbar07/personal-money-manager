@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/database"
 import { verifySession } from "@/lib/auth"
+import { ZodError } from "zod"
+import { transactionByCategoryQuerySchema } from "@/lib/validation/transaction"
 
 function getDeviceId(request: NextRequest): string {
   return request.headers.get("x-device-id") || request.headers.get("user-agent") || "unknown-device"
@@ -20,34 +22,9 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    const { searchParams } = new URL(request.url)
-    const categoryId = searchParams.get("categoryId")
-    const categoryName = searchParams.get("categoryName")
-    const startDateParam = searchParams.get("startDate")
-    const endDateParam = searchParams.get("endDate")
-    const limit = Number.parseInt(searchParams.get("limit") || "50")
-    const offset = Number.parseInt(searchParams.get("offset") || "0")
-
-    if (Number.isNaN(limit) || Number.isNaN(offset) || limit < 0 || offset < 0) {
-      return NextResponse.json({ error: "Limit and offset must be non-negative integers" }, { status: 400 })
-    }
-
-    let startDate: Date | undefined
-    if (startDateParam) {
-      startDate = new Date(startDateParam)
-      if (isNaN(startDate.getTime())) {
-        return NextResponse.json({ error: "Invalid startDate" }, { status: 400 })
-      }
-    }
-
-    let endDate: Date | undefined
-    if (endDateParam) {
-      endDate = new Date(endDateParam)
-      if (isNaN(endDate.getTime())) {
-        return NextResponse.json({ error: "Invalid endDate" }, { status: 400 })
-      }
-    }
+    const rawQuery = Object.fromEntries(new URL(request.url).searchParams.entries())
+    const { categoryId, categoryName, startDate, endDate, limit, offset } =
+      transactionByCategoryQuerySchema.parse(rawQuery)
 
     let transactions, count
 
@@ -105,8 +82,6 @@ export async function GET(request: NextRequest) {
         WHERE ${where}
       `
       count = countResult.count
-    } else {
-      return NextResponse.json({ error: "Category ID or name required" }, { status: 400 })
     }
 
     const total = Number.parseInt(count as any)
@@ -117,6 +92,9 @@ export async function GET(request: NextRequest) {
       hasMore: offset + limit < total,
     })
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({ errors: error.issues }, { status: 400 })
+    }
     console.error("Get transactions by category error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }

@@ -1,6 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/database"
 import { verifySession } from "@/lib/auth"
+import { ZodError } from "zod"
+import {
+  transactionSchema,
+  transactionUpdateSchema,
+  transactionQuerySchema,
+  transactionIdSchema,
+} from "@/lib/validation/transaction"
 
 function getDeviceId(request: NextRequest): string {
   return request.headers.get("x-device-id") || request.headers.get("user-agent") || "unknown-device"
@@ -20,34 +27,9 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-    const { searchParams } = new URL(request.url)
-    const startDateParam = searchParams.get("startDate")
-    const endDateParam = searchParams.get("endDate")
-    const limitParam = searchParams.get("limit")
-    const offsetParam = searchParams.get("offset")
 
-    const limit = Number.parseInt(limitParam || "50")
-    const offset = Number.parseInt(offsetParam || "0")
-
-    if (Number.isNaN(limit) || Number.isNaN(offset) || limit < 0 || offset < 0) {
-      return NextResponse.json({ error: "Limit and offset must be non-negative integers" }, { status: 400 })
-    }
-
-    let startDate: Date | undefined
-    if (startDateParam) {
-      startDate = new Date(startDateParam)
-      if (isNaN(startDate.getTime())) {
-        return NextResponse.json({ error: "Invalid startDate" }, { status: 400 })
-      }
-    }
-
-    let endDate: Date | undefined
-    if (endDateParam) {
-      endDate = new Date(endDateParam)
-      if (isNaN(endDate.getTime())) {
-        return NextResponse.json({ error: "Invalid endDate" }, { status: 400 })
-      }
-    }
+    const rawQuery = Object.fromEntries(new URL(request.url).searchParams.entries())
+    const { startDate, endDate, limit, offset } = transactionQuerySchema.parse(rawQuery)
 
     const conditions = []
     if (startDate && endDate) {
@@ -94,6 +76,9 @@ export async function GET(request: NextRequest) {
       hasMore: offset + limit < total,
     })
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({ errors: error.issues }, { status: 400 })
+    }
     console.error("Get transactions error:", error)
     return NextResponse.json({ error: "Failed to load transactions" }, { status: 500 })
   }
@@ -106,28 +91,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { type, amount, description, category, account, date } = await request.json()
-
-    // Validate required fields
-    if (!type || !amount || !description || !category || !account || !date) {
-      return NextResponse.json({ error: "All fields are required" }, { status: 400 })
-    }
-
-    // Validate amount
-    if (typeof amount !== "number" || amount <= 0) {
-      return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 })
-    }
-
-    // Validate type
-    if (type !== "income" && type !== "expense") {
-      return NextResponse.json({ error: "Type must be 'income' or 'expense'" }, { status: 400 })
-    }
-
-    // Validate date
-    const transactionDate = new Date(date)
-    if (isNaN(transactionDate.getTime())) {
-      return NextResponse.json({ error: "Invalid date format" }, { status: 400 })
-    }
+    const { type, amount, description, category, account, date } = transactionSchema.parse(
+      await request.json(),
+    )
 
     // Start transaction
     const result = await sql.begin(async (sql) => {
@@ -183,6 +149,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({ errors: error.issues }, { status: 400 })
+    }
     console.error("Create transaction error:", error)
 
     // Return specific error messages for validation failures
@@ -204,23 +173,8 @@ export async function PUT(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    const { id, type, amount, description, category, account, date } = await request.json()
-
-    // Validate required fields
-    if (!id || !type || !amount || !description || !category || !account || !date) {
-      return NextResponse.json({ error: "All fields are required" }, { status: 400 })
-    }
-
-    // Validate amount
-    if (typeof amount !== "number" || amount <= 0) {
-      return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 })
-    }
-
-    // Validate type
-    if (type !== "income" && type !== "expense") {
-      return NextResponse.json({ error: "Type must be 'income' or 'expense'" }, { status: 400 })
-    }
+    const { id, type, amount, description, category, account, date } =
+      transactionUpdateSchema.parse(await request.json())
 
     // Start transaction
     const result = await sql.begin(async (sql) => {
@@ -309,6 +263,9 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({ errors: error.issues }, { status: 400 })
+    }
     console.error("Update transaction error:", error)
 
     // Return specific error messages for validation failures
@@ -330,19 +287,14 @@ export async function DELETE(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    const { searchParams } = new URL(request.url)
-    const id = searchParams.get("id")
-
-    if (!id) {
-      return NextResponse.json({ error: "Transaction ID required" }, { status: 400 })
-    }
+    const rawQuery = Object.fromEntries(new URL(request.url).searchParams.entries())
+    const { id } = transactionIdSchema.parse(rawQuery)
 
     // Start transaction
     const result = await sql.begin(async (sql) => {
       // Get transaction for balance adjustment
       const [transaction] = await sql`
-        SELECT * FROM transactions 
+        SELECT * FROM transactions
         WHERE id = ${id} AND user_id = ${userId}
       `
 
@@ -376,6 +328,9 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({ errors: error.issues }, { status: 400 })
+    }
     console.error("Delete transaction error:", error)
 
     if (error.message.includes("not found") || error.message.includes("access denied")) {

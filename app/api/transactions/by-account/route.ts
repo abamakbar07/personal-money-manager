@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/database"
 import { verifySession } from "@/lib/auth"
+import { ZodError } from "zod"
+import { transactionByAccountQuerySchema } from "@/lib/validation/transaction"
 
 function getDeviceId(request: NextRequest): string {
   return request.headers.get("x-device-id") || request.headers.get("user-agent") || "unknown-device"
@@ -20,37 +22,8 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    const { searchParams } = new URL(request.url)
-    const accountId = searchParams.get("accountId")
-    const startDateParam = searchParams.get("startDate")
-    const endDateParam = searchParams.get("endDate")
-    const limit = Number.parseInt(searchParams.get("limit") || "50")
-    const offset = Number.parseInt(searchParams.get("offset") || "0")
-
-    if (!accountId) {
-      return NextResponse.json({ error: "Account ID required" }, { status: 400 })
-    }
-
-    if (Number.isNaN(limit) || Number.isNaN(offset) || limit < 0 || offset < 0) {
-      return NextResponse.json({ error: "Limit and offset must be non-negative integers" }, { status: 400 })
-    }
-
-    let startDate: Date | undefined
-    if (startDateParam) {
-      startDate = new Date(startDateParam)
-      if (isNaN(startDate.getTime())) {
-        return NextResponse.json({ error: "Invalid startDate" }, { status: 400 })
-      }
-    }
-
-    let endDate: Date | undefined
-    if (endDateParam) {
-      endDate = new Date(endDateParam)
-      if (isNaN(endDate.getTime())) {
-        return NextResponse.json({ error: "Invalid endDate" }, { status: 400 })
-      }
-    }
+    const rawQuery = Object.fromEntries(new URL(request.url).searchParams.entries())
+    const { accountId, startDate, endDate, limit, offset } = transactionByAccountQuerySchema.parse(rawQuery)
 
     const conditions = [sql`t.user_id = ${userId}`, sql`t.account_id = ${accountId}`]
     if (startDate && endDate) {
@@ -90,6 +63,9 @@ export async function GET(request: NextRequest) {
       hasMore: offset + limit < total,
     })
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({ errors: error.issues }, { status: 400 })
+    }
     console.error("Get transactions by account error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
