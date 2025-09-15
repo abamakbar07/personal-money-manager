@@ -115,34 +115,35 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "An account with this name already exists" }, { status: 400 })
     }
 
-    const result = await withTransaction(async (client) => {
+    const result = await withTransaction(async (tx) => {
       const balanceDifference = balance - existingAccount.balance
 
-      const { rows: accountRows } = await client.query(
-        `UPDATE accounts SET name = $1, type = $2, balance = $3, color = $4, updated_at = NOW() WHERE id = $5 AND user_id = $6 RETURNING *`,
-        [name.trim(), type, balance, color || "blue", id, userId],
-      )
+      const accountRows = await tx`
+        UPDATE accounts SET name = ${name.trim()}, type = ${type}, balance = ${balance}, color = ${
+          color || "blue"
+        }, updated_at = NOW() WHERE id = ${id} AND user_id = ${userId} RETURNING *
+      `
       const account = accountRows[0]
 
       if (balanceDifference !== 0) {
-        const { rows: categoryRows } = await client.query(
-          "SELECT id FROM categories WHERE user_id = $1 AND name = 'Other' AND type = $2",
-          [userId, balanceDifference > 0 ? "income" : "expense"],
-        )
+        const categoryRows = await tx`
+          SELECT id FROM categories WHERE user_id = ${userId} AND name = 'Other' AND type = ${
+            balanceDifference > 0 ? "income" : "expense"
+          }
+        `
         const otherCategory = categoryRows[0]
         if (otherCategory) {
-          await client.query(
-            `INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              userId,
-              id,
-              otherCategory.id,
-              balanceDifference > 0 ? "income" : "expense",
-              Math.abs(balanceDifference),
-              `Balance adjustment for ${name.trim()}`,
-              new Date().toISOString().split("T")[0],
-            ],
-          )
+          await tx`
+            INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date) VALUES (
+              ${userId},
+              ${id},
+              ${otherCategory.id},
+              ${balanceDifference > 0 ? "income" : "expense"},
+              ${Math.abs(balanceDifference)},
+              ${`Balance adjustment for ${name.trim()}`},
+              ${new Date().toISOString().split("T")[0]}
+            )
+          `
         }
       }
 
@@ -170,25 +171,22 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Account ID required" }, { status: 400 })
     }
 
-    const result = await withTransaction(async (client) => {
-      const { rows: accountRows } = await client.query(
-        "SELECT id FROM accounts WHERE id = $1 AND user_id = $2",
-        [id, userId],
-      )
+    const result = await withTransaction(async (tx) => {
+      const accountRows = await tx`
+        SELECT id FROM accounts WHERE id = ${id} AND user_id = ${userId}
+      `
       const account = accountRows[0]
       if (!account) {
         throw new Error("Account not found or access denied")
       }
 
-      await client.query(
-        "DELETE FROM transactions WHERE account_id = $1 AND user_id = $2",
-        [id, userId],
-      )
+      await tx`
+        DELETE FROM transactions WHERE account_id = ${id} AND user_id = ${userId}
+      `
 
-      await client.query(
-        "DELETE FROM accounts WHERE id = $1 AND user_id = $2",
-        [id, userId],
-      )
+      await tx`
+        DELETE FROM accounts WHERE id = ${id} AND user_id = ${userId}
+      `
 
       return { success: true }
     })

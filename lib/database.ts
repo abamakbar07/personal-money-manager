@@ -1,4 +1,4 @@
-import { neon, Client, neonConfig } from "@neondatabase/serverless"
+import { neon, neonConfig } from "@neondatabase/serverless"
 import ws from "ws"
 
 neonConfig.webSocketConstructor = ws
@@ -11,20 +11,8 @@ const sql = neon(process.env.DATABASE_URL)
 
 export { sql }
 
-export async function withTransaction<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-  const client = new Client(process.env.DATABASE_URL)
-  await client.connect()
-  try {
-    await client.query("BEGIN")
-    const result = await fn(client)
-    await client.query("COMMIT")
-    return result
-  } catch (error) {
-    await client.query("ROLLBACK")
-    throw error
-  } finally {
-    await client.end()
-  }
+export async function withTransaction<T>(fn: (tx: any) => Promise<T>) {
+  return sql.begin(fn)
 }
 
 // Database types
