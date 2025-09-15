@@ -115,54 +115,57 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "An account with this name already exists" }, { status: 400 })
     }
 
-    const result = await withTransaction(async (tx) => {
-      const balanceDifference = balance - existingAccount.balance
+      let result
+      try {
+        result = await withTransaction(async (tx) => {
+          const balanceDifference = balance - existingAccount.balance
 
-      const accountRows = await tx`
-        UPDATE accounts SET name = ${name.trim()}, type = ${type}, balance = ${balance}, color = ${
-          color || "blue"
-        }, updated_at = NOW() WHERE id = ${id} AND user_id = ${userId} RETURNING *
-      `
-      const account = accountRows[0]
-
-      if (balanceDifference !== 0) {
-        const categoryRows = await tx`
-          SELECT id FROM categories WHERE user_id = ${userId} AND name = 'Other' AND type = ${
-            balanceDifference > 0 ? "income" : "expense"
-          }
-        `
-        const otherCategory = categoryRows[0]
-        if (otherCategory) {
-          await tx`
-            INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date) VALUES (
-              ${userId},
-              ${id},
-              ${otherCategory.id},
-              ${balanceDifference > 0 ? "income" : "expense"},
-              ${Math.abs(balanceDifference)},
-              ${`Balance adjustment for ${name.trim()}`},
-              ${new Date().toISOString().split("T")[0]}
-            )
+          const accountRows = await tx`
+            UPDATE accounts SET name = ${name.trim()}, type = ${type}, balance = ${balance}, color = ${
+              color || "blue"
+            }, updated_at = NOW() WHERE id = ${id} AND user_id = ${userId} RETURNING *
           `
+          const account = accountRows[0]
+
+          if (balanceDifference !== 0) {
+            const categoryRows = await tx`
+              SELECT id FROM categories WHERE user_id = ${userId} AND name = 'Other' AND type = ${
+                balanceDifference > 0 ? "income" : "expense"
+              }
+            `
+            const otherCategory = categoryRows[0]
+            if (otherCategory) {
+              await tx`
+                INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date) VALUES (
+                  ${userId},
+                  ${id},
+                  ${otherCategory.id},
+                  ${balanceDifference > 0 ? "income" : "expense"},
+                  ${Math.abs(balanceDifference)},
+                  ${`Balance adjustment for ${name.trim()}`},
+                  ${new Date().toISOString().split("T")[0]}
+                )
+              `
+            }
+          }
+
+          return account
+        })
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("Connection terminated unexpectedly")
+        ) {
+          console.error("Update account error:", error)
+          return NextResponse.json(
+            { error: "Database connection lost; please retry" },
+            { status: 503 },
+          )
         }
-
-        return account
-      })
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes("Connection terminated unexpectedly")
-      ) {
-        console.error("Update account error:", error)
-        return NextResponse.json(
-          { error: "Database connection lost; please retry" },
-          { status: 503 },
-        )
+        throw error
       }
-      throw error
-    }
 
-    return NextResponse.json(result)
+      return NextResponse.json(result)
   } catch (error) {
     console.error("Update account error:", error)
     return NextResponse.json({ error: "Failed to update account" }, { status: 500 })
@@ -183,39 +186,41 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Account ID required" }, { status: 400 })
     }
 
-    const result = await withTransaction(async (tx) => {
-      const accountRows = await tx`
-        SELECT id FROM accounts WHERE id = ${id} AND user_id = ${userId}
-      `
-      const account = accountRows[0]
-      if (!account) {
-        throw new Error("Account not found or access denied")
+      let result
+      try {
+        result = await withTransaction(async (tx) => {
+          const accountRows = await tx`
+            SELECT id FROM accounts WHERE id = ${id} AND user_id = ${userId}
+          `
+          const account = accountRows[0]
+          if (!account) {
+            throw new Error("Account not found or access denied")
+          }
+
+          await tx`
+            DELETE FROM transactions WHERE account_id = ${id} AND user_id = ${userId}
+          `
+
+          await tx`
+            DELETE FROM accounts WHERE id = ${id} AND user_id = ${userId}
+          `
+          return { success: true }
+        })
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("Connection terminated unexpectedly")
+        ) {
+          console.error("Delete account error:", error)
+          return NextResponse.json(
+            { error: "Database connection lost; please retry" },
+            { status: 503 },
+          )
+        }
+        throw error
       }
 
-      await tx`
-        DELETE FROM transactions WHERE account_id = ${id} AND user_id = ${userId}
-      `
-
-      await tx`
-        DELETE FROM accounts WHERE id = ${id} AND user_id = ${userId}
-      `
-        return { success: true }
-      })
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes("Connection terminated unexpectedly")
-      ) {
-        console.error("Delete account error:", error)
-        return NextResponse.json(
-          { error: "Database connection lost; please retry" },
-          { status: 503 },
-        )
-      }
-      throw error
-    }
-
-    return NextResponse.json(result)
+      return NextResponse.json(result)
   } catch (error) {
     console.error("Delete account error:", error)
 
