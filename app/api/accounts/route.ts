@@ -115,39 +115,54 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "An account with this name already exists" }, { status: 400 })
     }
 
-    const result = await withTransaction(async (client) => {
-      const balanceDifference = balance - existingAccount.balance
+    let result
+    try {
+      result = await withTransaction(async (client) => {
+        const balanceDifference = balance - existingAccount.balance
 
-      const { rows: accountRows } = await client.query(
-        `UPDATE accounts SET name = $1, type = $2, balance = $3, color = $4, updated_at = NOW() WHERE id = $5 AND user_id = $6 RETURNING *`,
-        [name.trim(), type, balance, color || "blue", id, userId],
-      )
-      const account = accountRows[0]
-
-      if (balanceDifference !== 0) {
-        const { rows: categoryRows } = await client.query(
-          "SELECT id FROM categories WHERE user_id = $1 AND name = 'Other' AND type = $2",
-          [userId, balanceDifference > 0 ? "income" : "expense"],
+        const { rows: accountRows } = await client.query(
+          `UPDATE accounts SET name = $1, type = $2, balance = $3, color = $4, updated_at = NOW() WHERE id = $5 AND user_id = $6 RETURNING *`,
+          [name.trim(), type, balance, color || "blue", id, userId],
         )
-        const otherCategory = categoryRows[0]
-        if (otherCategory) {
-          await client.query(
-            `INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              userId,
-              id,
-              otherCategory.id,
-              balanceDifference > 0 ? "income" : "expense",
-              Math.abs(balanceDifference),
-              `Balance adjustment for ${name.trim()}`,
-              new Date().toISOString().split("T")[0],
-            ],
-          )
-        }
-      }
+        const account = accountRows[0]
 
-      return account
-    })
+        if (balanceDifference !== 0) {
+          const { rows: categoryRows } = await client.query(
+            "SELECT id FROM categories WHERE user_id = $1 AND name = 'Other' AND type = $2",
+            [userId, balanceDifference > 0 ? "income" : "expense"],
+          )
+          const otherCategory = categoryRows[0]
+          if (otherCategory) {
+            await client.query(
+              `INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [
+                userId,
+                id,
+                otherCategory.id,
+                balanceDifference > 0 ? "income" : "expense",
+                Math.abs(balanceDifference),
+                `Balance adjustment for ${name.trim()}`,
+                new Date().toISOString().split("T")[0],
+              ],
+            )
+          }
+        }
+
+        return account
+      })
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Connection terminated unexpectedly")
+      ) {
+        console.error("Update account error:", error)
+        return NextResponse.json(
+          { error: "Database connection lost; please retry" },
+          { status: 503 },
+        )
+      }
+      throw error
+    }
 
     return NextResponse.json(result)
   } catch (error) {
@@ -170,28 +185,43 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Account ID required" }, { status: 400 })
     }
 
-    const result = await withTransaction(async (client) => {
-      const { rows: accountRows } = await client.query(
-        "SELECT id FROM accounts WHERE id = $1 AND user_id = $2",
-        [id, userId],
-      )
-      const account = accountRows[0]
-      if (!account) {
-        throw new Error("Account not found or access denied")
+    let result
+    try {
+      result = await withTransaction(async (client) => {
+        const { rows: accountRows } = await client.query(
+          "SELECT id FROM accounts WHERE id = $1 AND user_id = $2",
+          [id, userId],
+        )
+        const account = accountRows[0]
+        if (!account) {
+          throw new Error("Account not found or access denied")
+        }
+
+        await client.query(
+          "DELETE FROM transactions WHERE account_id = $1 AND user_id = $2",
+          [id, userId],
+        )
+
+        await client.query(
+          "DELETE FROM accounts WHERE id = $1 AND user_id = $2",
+          [id, userId],
+        )
+
+        return { success: true }
+      })
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Connection terminated unexpectedly")
+      ) {
+        console.error("Delete account error:", error)
+        return NextResponse.json(
+          { error: "Database connection lost; please retry" },
+          { status: 503 },
+        )
       }
-
-      await client.query(
-        "DELETE FROM transactions WHERE account_id = $1 AND user_id = $2",
-        [id, userId],
-      )
-
-      await client.query(
-        "DELETE FROM accounts WHERE id = $1 AND user_id = $2",
-        [id, userId],
-      )
-
-      return { success: true }
-    })
+      throw error
+    }
 
     return NextResponse.json(result)
   } catch (error) {
