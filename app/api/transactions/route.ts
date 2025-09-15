@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { sql } from "@/lib/database"
+import { sql, withTransaction } from "@/lib/database"
 import { verifySession } from "@/lib/auth"
 import { ZodError } from "zod"
 import {
@@ -95,53 +95,50 @@ export async function POST(request: NextRequest) {
       await request.json(),
     )
 
-    // Start transaction
-    const result = await sql.begin(async (sql) => {
-      // Verify account belongs to user
-      const [accountRecord] = await sql`
-        SELECT id, balance FROM accounts 
-        WHERE id = ${account} AND user_id = ${userId}
-      `
-
+    const result = await withTransaction(async (client) => {
+      const {
+        rows: accountRows,
+      } = await client.query(
+        "SELECT id, balance FROM accounts WHERE id = $1 AND user_id = $2",
+        [account, userId],
+      )
+      const accountRecord = accountRows[0]
       if (!accountRecord) {
         throw new Error("Account not found or access denied")
       }
 
-      // Get category ID
-      const [categoryRecord] = await sql`
-        SELECT id FROM categories 
-        WHERE name = ${category} AND type = ${type} AND user_id = ${userId}
-      `
-
+      const {
+        rows: categoryRows,
+      } = await client.query(
+        "SELECT id FROM categories WHERE name = $1 AND type = $2 AND user_id = $3",
+        [category, type, userId],
+      )
+      const categoryRecord = categoryRows[0]
       if (!categoryRecord) {
         throw new Error("Category not found")
       }
 
-      // For expenses, check if account has sufficient balance
-      if (type === "expense" && accountRecord.balance < amount) {
+      if (type === "expense" && Number(accountRecord.balance) < amount) {
         throw new Error("Insufficient account balance")
       }
 
-      // Insert transaction
-      const [transaction] = await sql`
-        INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date)
-        VALUES (${userId}, ${account}, ${categoryRecord.id}, ${type}, ${amount}, ${description.trim()}, ${date})
-        RETURNING *
-      `
+      const { rows: transactionRows } = await client.query(
+        `INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [userId, account, categoryRecord.id, type, amount, description.trim(), date],
+      )
+      const transaction = transactionRows[0]
 
-      // Update account balance
       if (type === "income") {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance + ${amount}, updated_at = NOW()
-          WHERE id = ${account} AND user_id = ${userId}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+          [amount, account, userId],
+        )
       } else {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance - ${amount}, updated_at = NOW()
-          WHERE id = ${account} AND user_id = ${userId}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE id = $2 AND user_id = $3",
+          [amount, account, userId],
+        )
       }
 
       return transaction
@@ -176,86 +173,77 @@ export async function PUT(request: NextRequest) {
     const { id, type, amount, description, category, account, date } =
       transactionUpdateSchema.parse(await request.json())
 
-    // Start transaction
-    const result = await sql.begin(async (sql) => {
-      // Get old transaction for balance adjustment
-      const [oldTransaction] = await sql`
-        SELECT t.*, a.balance as account_balance FROM transactions t
-        LEFT JOIN accounts a ON t.account_id = a.id
-        WHERE t.id = ${id} AND t.user_id = ${userId}
-      `
-
+    const result = await withTransaction(async (client) => {
+      const {
+        rows: oldRows,
+      } = await client.query(
+        `SELECT t.*, a.balance as account_balance FROM transactions t LEFT JOIN accounts a ON t.account_id = a.id WHERE t.id = $1 AND t.user_id = $2`,
+        [id, userId],
+      )
+      const oldTransaction = oldRows[0]
       if (!oldTransaction) {
         throw new Error("Transaction not found or access denied")
       }
 
-      // Verify new account belongs to user
-      const [newAccountRecord] = await sql`
-        SELECT id, balance FROM accounts 
-        WHERE id = ${account} AND user_id = ${userId}
-      `
-
+      const {
+        rows: newAccountRows,
+      } = await client.query(
+        "SELECT id, balance FROM accounts WHERE id = $1 AND user_id = $2",
+        [account, userId],
+      )
+      const newAccountRecord = newAccountRows[0]
       if (!newAccountRecord) {
         throw new Error("Account not found or access denied")
       }
 
-      // Get category ID
-      const [categoryRecord] = await sql`
-        SELECT id FROM categories 
-        WHERE name = ${category} AND type = ${type} AND user_id = ${userId}
-      `
-
+      const {
+        rows: categoryRows,
+      } = await client.query(
+        "SELECT id FROM categories WHERE name = $1 AND type = $2 AND user_id = $3",
+        [category, type, userId],
+      )
+      const categoryRecord = categoryRows[0]
       if (!categoryRecord) {
         throw new Error("Category not found")
       }
 
-      // Reverse old transaction effect on old account
       if (oldTransaction.type === "income") {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance - ${oldTransaction.amount}, updated_at = NOW()
-          WHERE id = ${oldTransaction.account_id}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE id = $2",
+          [oldTransaction.amount, oldTransaction.account_id],
+        )
       } else {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance + ${oldTransaction.amount}, updated_at = NOW()
-          WHERE id = ${oldTransaction.account_id}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE id = $2",
+          [oldTransaction.amount, oldTransaction.account_id],
+        )
       }
 
-      // Check if new account has sufficient balance for expense
-      const [updatedAccountBalance] = await sql`
-        SELECT balance FROM accounts WHERE id = ${account}
-      `
-
-      if (type === "expense" && updatedAccountBalance.balance < amount) {
+      const { rows: updatedAccountRows } = await client.query(
+        "SELECT balance FROM accounts WHERE id = $1",
+        [account],
+      )
+      const updatedAccountBalance = updatedAccountRows[0]
+      if (type === "expense" && Number(updatedAccountBalance.balance) < amount) {
         throw new Error("Insufficient account balance for this transaction")
       }
 
-      // Update transaction
-      const [transaction] = await sql`
-        UPDATE transactions 
-        SET type = ${type}, amount = ${amount}, description = ${description.trim()}, 
-            category_id = ${categoryRecord.id}, account_id = ${account}, 
-            transaction_date = ${date}, updated_at = NOW()
-        WHERE id = ${id} AND user_id = ${userId}
-        RETURNING *
-      `
+      const { rows: transactionRows } = await client.query(
+        `UPDATE transactions SET type = $1, amount = $2, description = $3, category_id = $4, account_id = $5, transaction_date = $6, updated_at = NOW() WHERE id = $7 AND user_id = $8 RETURNING *`,
+        [type, amount, description.trim(), categoryRecord.id, account, date, id, userId],
+      )
+      const transaction = transactionRows[0]
 
-      // Apply new transaction effect on new account
       if (type === "income") {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance + ${amount}, updated_at = NOW()
-          WHERE id = ${account}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE id = $2",
+          [amount, account],
+        )
       } else {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance - ${amount}, updated_at = NOW()
-          WHERE id = ${account}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE id = $2",
+          [amount, account],
+        )
       }
 
       return transaction
@@ -290,37 +278,31 @@ export async function DELETE(request: NextRequest) {
     const rawQuery = Object.fromEntries(new URL(request.url).searchParams.entries())
     const { id } = transactionIdSchema.parse(rawQuery)
 
-    // Start transaction
-    const result = await sql.begin(async (sql) => {
-      // Get transaction for balance adjustment
-      const [transaction] = await sql`
-        SELECT * FROM transactions
-        WHERE id = ${id} AND user_id = ${userId}
-      `
-
+    const result = await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        "SELECT * FROM transactions WHERE id = $1 AND user_id = $2",
+        [id, userId],
+      )
+      const transaction = rows[0]
       if (!transaction) {
         throw new Error("Transaction not found or access denied")
       }
 
-      // Delete transaction
-      await sql`
-        DELETE FROM transactions 
-        WHERE id = ${id} AND user_id = ${userId}
-      `
+      await client.query(
+        "DELETE FROM transactions WHERE id = $1 AND user_id = $2",
+        [id, userId],
+      )
 
-      // Adjust account balance (reverse the transaction effect)
       if (transaction.type === "income") {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance - ${transaction.amount}, updated_at = NOW()
-          WHERE id = ${transaction.account_id}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE id = $2",
+          [transaction.amount, transaction.account_id],
+        )
       } else {
-        await sql`
-          UPDATE accounts 
-          SET balance = balance + ${transaction.amount}, updated_at = NOW()
-          WHERE id = ${transaction.account_id}
-        `
+        await client.query(
+          "UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE id = $2",
+          [transaction.amount, transaction.account_id],
+        )
       }
 
       return { success: true }
