@@ -21,6 +21,10 @@ async function getUserFromRequest(request: NextRequest): Promise<string | null> 
   return await verifySession(sessionToken, deviceId)
 }
 
+function formatTransactionDate(date: Date): string {
+  return date.toISOString().split("T")[0]
+}
+
 export async function GET(request: NextRequest) {
   try {
     const userId = await getUserFromRequest(request)
@@ -95,6 +99,8 @@ export async function POST(request: NextRequest) {
       await request.json(),
     )
 
+    const transactionDate = formatTransactionDate(date)
+
     const result = await withTransaction(async (tx) => {
       const accountRows = await tx`
         SELECT id, balance FROM accounts WHERE id = ${account} AND user_id = ${userId}
@@ -118,7 +124,7 @@ export async function POST(request: NextRequest) {
 
       const transactionRows = await tx`
         INSERT INTO transactions (user_id, account_id, category_id, type, amount, description, transaction_date)
-        VALUES (${userId}, ${account}, ${categoryRecord.id}, ${type}, ${amount}, ${description.trim()}, ${date})
+        VALUES (${userId}, ${account}, ${categoryRecord.id}, ${type}, ${amount}, ${description.trim()}, ${transactionDate})
         RETURNING *
       `
       const transaction = transactionRows[0]
@@ -165,6 +171,8 @@ export async function PUT(request: NextRequest) {
     const { id, type, amount, description, category, account, date } =
       transactionUpdateSchema.parse(await request.json())
 
+    const transactionDate = formatTransactionDate(date)
+
     const result = await withTransaction(async (tx) => {
       const oldRows = await tx`
         SELECT t.*, a.balance as account_balance FROM transactions t LEFT JOIN accounts a ON t.account_id = a.id WHERE t.id = ${id} AND t.user_id = ${userId}
@@ -209,7 +217,7 @@ export async function PUT(request: NextRequest) {
       }
 
       const transactionRows = await tx`
-        UPDATE transactions SET type = ${type}, amount = ${amount}, description = ${description.trim()}, category_id = ${categoryRecord.id}, account_id = ${account}, transaction_date = ${date}, updated_at = NOW() WHERE id = ${id} AND user_id = ${userId} RETURNING *
+        UPDATE transactions SET type = ${type}, amount = ${amount}, description = ${description.trim()}, category_id = ${categoryRecord.id}, account_id = ${account}, transaction_date = ${transactionDate}, updated_at = NOW() WHERE id = ${id} AND user_id = ${userId} RETURNING *
       `
       const transaction = transactionRows[0]
 
