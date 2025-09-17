@@ -1,4 +1,5 @@
-import { neon, neonConfig } from "@neondatabase/serverless"
+import { neon, neonConfig, Pool } from "@neondatabase/serverless"
+import type { PoolClient } from "@neondatabase/serverless"
 import ws from "ws"
 
 neonConfig.webSocketConstructor = ws
@@ -9,10 +10,56 @@ if (!process.env.DATABASE_URL) {
 
 const sql = neon(process.env.DATABASE_URL)
 
+const transactionPool = new Pool({ connectionString: process.env.DATABASE_URL })
+
+type TransactionSql = ReturnType<typeof createTransactionSql>
+
 export { sql }
 
-export async function withTransaction<T>(fn: (tx: any) => Promise<T>) {
-  return sql.begin(fn)
+export async function withTransaction<T>(fn: (tx: TransactionSql) => Promise<T>) {
+  const client = await transactionPool.connect()
+
+  try {
+    await client.query("BEGIN")
+
+    const tx = createTransactionSql(client)
+    const result = await fn(tx)
+
+    await client.query("COMMIT")
+
+    return result
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined)
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+function createTransactionSql(client: PoolClient) {
+  const tx = async (strings: TemplateStringsArray, ...params: unknown[]) => {
+    const text = buildQueryText(strings, params)
+    const { rows } = await client.query(text, params)
+    return rows
+  }
+
+  tx.query = async (text: string, params: unknown[] = []) => {
+    const { rows } = await client.query(text, params)
+    return rows
+  }
+
+  return tx
+}
+
+function buildQueryText(strings: TemplateStringsArray, params: unknown[]) {
+  let text = ""
+  for (let i = 0; i < strings.length; i++) {
+    text += strings[i]
+    if (i < params.length) {
+      text += `$${i + 1}`
+    }
+  }
+  return text
 }
 
 // Database types
