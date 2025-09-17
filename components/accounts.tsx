@@ -41,6 +41,13 @@ interface Account {
   created_at: string
 }
 
+const createInitialFormData = () => ({
+  name: "",
+  type: "checking",
+  balance: "",
+  color: "blue",
+})
+
 export function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -50,12 +57,7 @@ export function Accounts() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [formData, setFormData] = useState({
-    name: "",
-    type: "checking",
-    balance: "",
-    color: "blue",
-  })
+  const [formData, setFormData] = useState(() => createInitialFormData())
 
   useEffect(() => {
     loadAccounts()
@@ -159,7 +161,7 @@ export function Accounts() {
         await loadAccounts()
 
         // Reset form and close dialog
-        handleDialogClose()
+        handleDialogOpenChange(false)
       } else {
         throw new Error(result?.error || "Failed to save account")
       }
@@ -214,11 +216,23 @@ export function Accounts() {
     }
   }
 
-  const handleDialogClose = () => {
-    setIsDialogOpen(false)
+  const resetFormState = () => {
     setEditingAccount(null)
-    setFormData({ name: "", type: "checking", balance: "", color: "blue" })
+    setFormData(createInitialFormData())
     setError(null)
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open)
+
+    if (!open) {
+      resetFormState()
+    }
+  }
+
+  const handleAddAccountClick = () => {
+    resetFormState()
+    setIsDialogOpen(true)
   }
 
   const getAccountIcon = (type: string) => {
@@ -274,9 +288,12 @@ export function Accounts() {
             </span>
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
           <DialogTrigger asChild>
-            <Button className="gradient-blue border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl h-12 px-6">
+            <Button
+              onClick={handleAddAccountClick}
+              className="gradient-blue border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl h-12 px-6"
+            >
               <Plus className="h-5 w-5 mr-2" />
               Add Account
             </Button>
@@ -385,7 +402,7 @@ export function Accounts() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={handleDialogClose}
+                  onClick={() => handleDialogOpenChange(false)}
                   disabled={isSaving}
                   className="rounded-2xl bg-transparent"
                 >
@@ -486,7 +503,7 @@ export function Accounts() {
               Add your first account to start tracking your finances and take control of your money
             </p>
             <Button
-              onClick={() => setIsDialogOpen(true)}
+              onClick={handleAddAccountClick}
               className="gradient-purple border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl h-12 px-8"
             >
               <Plus className="h-5 w-5 mr-2" />
