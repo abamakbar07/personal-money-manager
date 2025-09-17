@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -17,7 +17,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Edit, Trash2, Folder } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Plus, Edit, Trash2, Folder, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
+import { apiClient } from "@/lib/api-client"
 
 interface Category {
   id: string
@@ -27,95 +29,176 @@ interface Category {
   isDefault: boolean
 }
 
+const initialFormState = {
+  name: "",
+  type: "expense",
+  color: "blue",
+}
+
 export function CategoryManager() {
   const [categories, setCategories] = useState<Category[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
-  const [formData, setFormData] = useState({
-    name: "",
-    type: "expense",
-    color: "blue",
-  })
-
-  const defaultCategories: Category[] = [
-    // Expense categories
-    { id: "food", name: "Food & Dining", type: "expense", color: "red", isDefault: true },
-    { id: "transport", name: "Transportation", type: "expense", color: "blue", isDefault: true },
-    { id: "shopping", name: "Shopping", type: "expense", color: "purple", isDefault: true },
-    { id: "entertainment", name: "Entertainment", type: "expense", color: "pink", isDefault: true },
-    { id: "bills", name: "Bills & Utilities", type: "expense", color: "yellow", isDefault: true },
-    { id: "healthcare", name: "Healthcare", type: "expense", color: "green", isDefault: true },
-    { id: "education", name: "Education", type: "expense", color: "indigo", isDefault: true },
-    { id: "travel", name: "Travel", type: "expense", color: "teal", isDefault: true },
-    { id: "transfer", name: "Transfer", type: "expense", color: "gray", isDefault: true },
-    { id: "other-expense", name: "Other", type: "expense", color: "gray", isDefault: true },
-
-    // Income categories
-    { id: "salary", name: "Salary", type: "income", color: "green", isDefault: true },
-    { id: "freelance", name: "Freelance", type: "income", color: "blue", isDefault: true },
-    { id: "investment", name: "Investment", type: "income", color: "purple", isDefault: true },
-    { id: "gift", name: "Gift", type: "income", color: "pink", isDefault: true },
-    { id: "bonus", name: "Bonus", type: "income", color: "yellow", isDefault: true },
-    { id: "transfer-income", name: "Transfer", type: "income", color: "gray", isDefault: true },
-    { id: "other-income", name: "Other", type: "income", color: "gray", isDefault: true },
-  ]
+  const [formData, setFormData] = useState(initialFormState)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   useEffect(() => {
-    const storedCategories = JSON.parse(localStorage.getItem("money-manager-categories") || "[]")
-    if (storedCategories.length === 0) {
-      // Initialize with default categories
-      setCategories(defaultCategories)
-      localStorage.setItem("money-manager-categories", JSON.stringify(defaultCategories))
-    } else {
-      setCategories(storedCategories)
-    }
+    loadCategories(true)
   }, [])
 
-  const saveCategories = (newCategories: Category[]) => {
-    setCategories(newCategories)
-    localStorage.setItem("money-manager-categories", JSON.stringify(newCategories))
+  useEffect(() => {
+    if (!success) return
+
+    const timer = setTimeout(() => setSuccess(null), 5000)
+    return () => clearTimeout(timer)
+  }, [success])
+
+  const mapCategory = (category: any): Category => ({
+    id: category.id,
+    name: category.name,
+    type: category.type,
+    color: category.color || "blue",
+    isDefault: Boolean(category.is_default ?? category.isDefault),
+  })
+
+  const loadCategories = async (showSpinner = false) => {
+    if (showSpinner) {
+      setIsLoading(true)
+    }
+
+    try {
+      setError(null)
+      const data = await apiClient.get("/api/categories")
+
+      if (Array.isArray(data)) {
+        setCategories(data.map(mapCategory))
+      } else if (data?.error) {
+        throw new Error(data.error)
+      } else {
+        setCategories([])
+      }
+    } catch (error) {
+      console.error("Error loading categories:", error)
+      setError("Failed to load categories. Please refresh the page.")
+    } finally {
+      if (showSpinner) {
+        setIsLoading(false)
+      }
+    }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError(null)
+    setError(null)
+    setSuccess(null)
 
-    const categoryData = {
-      id: editingCategory?.id || Date.now().toString(),
-      name: formData.name,
-      type: formData.type as "income" | "expense",
-      color: formData.color,
-      isDefault: false,
+    if (!formData.name.trim()) {
+      setFormError("Please enter a category name")
+      return
     }
 
-    if (editingCategory) {
-      const updatedCategories = categories.map((cat) => (cat.id === editingCategory.id ? categoryData : cat))
-      saveCategories(updatedCategories)
-    } else {
-      saveCategories([...categories, categoryData])
-    }
+    setIsSaving(true)
 
-    setIsDialogOpen(false)
-    setEditingCategory(null)
-    setFormData({ name: "", type: "expense", color: "blue" })
+    try {
+      const payload = {
+        name: formData.name.trim(),
+        type: formData.type as "income" | "expense",
+        color: formData.color,
+      }
+
+      const result = editingCategory
+        ? await apiClient.put("/api/categories", { id: editingCategory.id, ...payload })
+        : await apiClient.post("/api/categories", payload)
+
+      if (!result || result.error) {
+        throw new Error(
+          result?.error || `Failed to ${editingCategory ? "update" : "create"} category`,
+        )
+      }
+
+      await loadCategories()
+      setSuccess(editingCategory ? "Category updated successfully!" : "Category created successfully!")
+      setFormError(null)
+      handleDialogOpenChange(false)
+    } catch (error) {
+      console.error("Error saving category:", error)
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : `Failed to ${editingCategory ? "update" : "create"} category. Please try again.`,
+      )
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleEdit = (category: Category) => {
-    if (category.isDefault) return // Prevent editing default categories
+    if (category.isDefault) return
+
     setEditingCategory(category)
     setFormData({
       name: category.name,
       type: category.type,
       color: category.color,
     })
+    setFormError(null)
+    setSuccess(null)
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (categoryId: string) => {
+  const handleDelete = async (categoryId: string) => {
     const category = categories.find((cat) => cat.id === categoryId)
-    if (category?.isDefault) return // Prevent deleting default categories
+    if (category?.isDefault) return
 
-    const updatedCategories = categories.filter((cat) => cat.id !== categoryId)
-    saveCategories(updatedCategories)
+    if (!confirm("Are you sure you want to delete this category? This action cannot be undone.")) {
+      return
+    }
+
+    setIsDeleting(categoryId)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const result = await apiClient.delete(`/api/categories?id=${categoryId}`)
+
+      if (!result || result.error) {
+        throw new Error(result?.error || "Failed to delete category")
+      }
+
+      await loadCategories()
+      setSuccess("Category deleted successfully!")
+    } catch (error) {
+      console.error("Error deleting category:", error)
+      setError(
+        error instanceof Error ? error.message : "Failed to delete category. Please try again.",
+      )
+    } finally {
+      setIsDeleting(null)
+    }
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open)
+
+    if (!open) {
+      setEditingCategory(null)
+      setFormData(initialFormState)
+      setFormError(null)
+    }
+  }
+
+  const handleAddCategoryClick = () => {
+    setEditingCategory(null)
+    setFormData(initialFormState)
+    setFormError(null)
+    setSuccess(null)
+    setIsDialogOpen(true)
   }
 
   const getColorClass = (color: string) => {
@@ -130,11 +213,22 @@ export function CategoryManager() {
       teal: "bg-teal-500",
       gray: "bg-gray-500",
     }
-    return colors[color] || colors.blue
+    return colors[color as keyof typeof colors] || colors.blue
   }
 
   const expenseCategories = categories.filter((cat) => cat.type === "expense")
   const incomeCategories = categories.filter((cat) => cat.type === "income")
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Loading categories...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -143,9 +237,9 @@ export function CategoryManager() {
           <h2 className="text-3xl font-bold tracking-tight">Category Management</h2>
           <p className="text-muted-foreground">Manage your transaction categories</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={handleAddCategoryClick}>
               <Plus className="h-4 w-4 mr-2" />
               Add Category
             </Button>
@@ -154,7 +248,9 @@ export function CategoryManager() {
             <DialogHeader>
               <DialogTitle>{editingCategory ? "Edit Category" : "Add New Category"}</DialogTitle>
               <DialogDescription>
-                {editingCategory ? "Update category details" : "Create a new category for your transactions"}
+                {editingCategory
+                  ? "Update category details"
+                  : "Create a new category for your transactions"}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
@@ -167,11 +263,16 @@ export function CategoryManager() {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="e.g., Groceries"
                     required
+                    disabled={isSaving}
                   />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="type">Type</Label>
-                  <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })}>
+                  <Select
+                    value={formData.type}
+                    onValueChange={(value) => setFormData({ ...formData, type: value })}
+                    disabled={isSaving}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -183,7 +284,11 @@ export function CategoryManager() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="color">Color</Label>
-                  <Select value={formData.color} onValueChange={(value) => setFormData({ ...formData, color: value })}>
+                  <Select
+                    value={formData.color}
+                    onValueChange={(value) => setFormData({ ...formData, color: value })}
+                    disabled={isSaving}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -201,13 +306,44 @@ export function CategoryManager() {
                   </Select>
                 </div>
               </div>
+              {formError && (
+                <Alert className="mb-4 border-red-200 bg-red-50">
+                  <AlertCircle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-700">{formError}</AlertDescription>
+                </Alert>
+              )}
               <DialogFooter>
-                <Button type="submit">{editingCategory ? "Update Category" : "Add Category"}</Button>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {editingCategory ? "Updating..." : "Creating..."}
+                    </>
+                  ) : editingCategory ? (
+                    "Update Category"
+                  ) : (
+                    "Add Category"
+                  )}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      {success && (
+        <Alert className="border-green-200 bg-green-50">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-700">{success}</AlertDescription>
+        </Alert>
+      )}
+
+      {error && (
+        <Alert className="border-red-200 bg-red-50">
+          <AlertCircle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-700">{error}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -231,11 +367,25 @@ export function CategoryManager() {
                   </div>
                   {!category.isDefault && (
                     <div className="flex space-x-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(category)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(category)}
+                        disabled={isSaving || isDeleting === category.id}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(category.id)}>
-                        <Trash2 className="h-4 w-4" />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(category.id)}
+                        disabled={isSaving || isDeleting === category.id}
+                      >
+                        {isDeleting === category.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
                   )}
@@ -266,11 +416,25 @@ export function CategoryManager() {
                   </div>
                   {!category.isDefault && (
                     <div className="flex space-x-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(category)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(category)}
+                        disabled={isSaving || isDeleting === category.id}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(category.id)}>
-                        <Trash2 className="h-4 w-4" />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(category.id)}
+                        disabled={isSaving || isDeleting === category.id}
+                      >
+                        {isDeleting === category.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
                   )}
