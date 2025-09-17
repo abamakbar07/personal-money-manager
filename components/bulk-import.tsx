@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useRef } from "react"
+import { apiClient } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -44,40 +45,36 @@ export function BulkImport() {
     setUploadProgress(0)
     setImportResult(null)
 
+    const progressInterval = setInterval(() => {
+      setUploadProgress((prev) => Math.min(prev + 10, 90))
+    }, 200)
+
     try {
       const formData = new FormData()
       formData.append("file", file)
 
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => Math.min(prev + 10, 90))
-      }, 200)
+      const result = await apiClient.postFormData("/api/import", formData)
 
-      const response = await fetch("/api/import", {
-        method: "POST",
-        body: formData,
-      })
-
-      clearInterval(progressInterval)
       setUploadProgress(100)
-
-      const result = await response.json()
-
-      if (response.ok) {
-        setImportResult(result)
-      } else {
-        throw new Error(result.error || "Import failed")
-      }
+      setImportResult(result)
     } catch (error) {
       console.error("Import error:", error)
+      const status = (error as { status?: number } | undefined)?.status
+      let message = error instanceof Error ? error.message : "Import failed"
+
+      if (status === 401) {
+        message = "Your session has expired. Please log in again."
+      }
+
       setImportResult({
         success: false,
         totalRows: 0,
         successfulRows: 0,
         failedRows: 0,
-        errors: [{ row: 0, field: "general", message: error.message, data: null }],
+        errors: [{ row: 0, field: "general", message, data: null }],
       })
     } finally {
+      clearInterval(progressInterval)
       setIsUploading(false)
       setTimeout(() => setUploadProgress(0), 2000)
     }

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/database"
-import { getUserId } from "@/lib/auth"
+import { verifySession } from "@/lib/auth"
 import * as XLSX from "xlsx"
 
 interface ImportRow {
@@ -13,6 +13,18 @@ interface ImportRow {
   [key: string]: any
 }
 
+function getDeviceId(request: NextRequest): string {
+  return request.headers.get("x-device-id") || request.headers.get("user-agent") || "unknown-device"
+}
+
+async function getUserFromRequest(request: NextRequest): Promise<string | null> {
+  const sessionToken = request.headers.get("authorization")?.replace("Bearer ", "")
+  if (!sessionToken) return null
+
+  const deviceId = getDeviceId(request)
+  return await verifySession(sessionToken, deviceId)
+}
+
 interface ImportError {
   row: number
   field: string
@@ -22,7 +34,7 @@ interface ImportError {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getUserId()
+    const userId = await getUserFromRequest(request)
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
