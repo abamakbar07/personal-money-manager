@@ -61,7 +61,21 @@ interface Category {
   type: "income" | "expense"
 }
 
-export function Transactions() {
+interface TransactionsProps {
+  openAddDialog?: boolean
+  onDialogOpenChange?: (open: boolean) => void
+}
+
+const getInitialFormState = () => ({
+  type: "expense" as const,
+  amount: "",
+  description: "",
+  category: "",
+  account: "",
+  date: new Date().toISOString().split("T")[0],
+})
+
+export function Transactions({ openAddDialog = false, onDialogOpenChange }: TransactionsProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -78,14 +92,7 @@ export function Transactions() {
   const [hasMore, setHasMore] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const pageSize = 20
-  const [formData, setFormData] = useState({
-    type: "expense",
-    amount: "",
-    description: "",
-    category: "",
-    account: "",
-    date: new Date().toISOString().split("T")[0],
-  })
+  const [formData, setFormData] = useState(getInitialFormState)
 
   useEffect(() => {
     loadData()
@@ -150,6 +157,27 @@ export function Transactions() {
     }
   }
 
+  useEffect(() => {
+    if (!openAddDialog || isDialogOpen || isLoading) {
+      return
+    }
+
+    if (accounts.length === 0 || categories.length === 0) {
+      setError(
+        "You need at least one account and available categories before adding a transaction.",
+      )
+      onDialogOpenChange?.(false)
+      return
+    }
+
+    setEditingTransaction(null)
+    setFormData(getInitialFormState())
+    setError(null)
+    setSuccess(null)
+    setIsDialogOpen(true)
+    onDialogOpenChange?.(true)
+  }, [openAddDialog, isDialogOpen, isLoading, accounts.length, categories.length, onDialogOpenChange])
+
   const getCategoriesByType = (type: "income" | "expense") => {
     return categories.filter((cat) => cat.type === type)
   }
@@ -188,14 +216,8 @@ export function Transactions() {
         // Reset form and close dialog
         setIsDialogOpen(false)
         setEditingTransaction(null)
-        setFormData({
-          type: "expense",
-          amount: "",
-          description: "",
-          category: "",
-          account: "",
-          date: new Date().toISOString().split("T")[0],
-        })
+        setFormData(getInitialFormState())
+        onDialogOpenChange?.(false)
       } else {
         throw new Error(result?.error || "Failed to save transaction")
       }
@@ -218,6 +240,7 @@ export function Transactions() {
       date: transaction.transaction_date,
     })
     setIsDialogOpen(true)
+    onDialogOpenChange?.(true)
     setError(null)
     setSuccess(null)
   }
@@ -252,16 +275,30 @@ export function Transactions() {
   const handleDialogClose = () => {
     setIsDialogOpen(false)
     setEditingTransaction(null)
-    setFormData({
-      type: "expense",
-      amount: "",
-      description: "",
-      category: "",
-      account: "",
-      date: new Date().toISOString().split("T")[0],
-    })
+    setFormData(getInitialFormState())
     setError(null)
-    setSuccess(null)
+    onDialogOpenChange?.(false)
+  }
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (open) {
+      if (accounts.length === 0 || categories.length === 0) {
+        setError(
+          "You need at least one account and available categories before adding a transaction.",
+        )
+        onDialogOpenChange?.(false)
+        return
+      }
+      if (!editingTransaction) {
+        setFormData(getInitialFormState())
+      }
+      setError(null)
+      setSuccess(null)
+      setIsDialogOpen(true)
+      onDialogOpenChange?.(true)
+    } else {
+      handleDialogClose()
+    }
   }
 
   const filteredTransactions = transactions
@@ -300,7 +337,7 @@ export function Transactions() {
           <h1 className="text-3xl lg:text-4xl font-bold text-neutral-800 mb-2">Transactions</h1>
           <p className="text-neutral-600">Track every rupiah in and out</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
           <DialogTrigger asChild>
             <Button
               className="gradient-green border-0 text-white shadow-lg hover:scale-105 transition-all duration-200 rounded-2xl h-12 px-6"

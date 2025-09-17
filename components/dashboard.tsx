@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { LogOut, Menu } from "lucide-react"
 import { Overview } from "@/components/overview"
@@ -21,6 +21,7 @@ interface DashboardProps {
 export function Dashboard({ onLogout }: DashboardProps) {
   const [activeTab, setActiveTab] = useState("overview")
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [shouldOpenTransactionDialog, setShouldOpenTransactionDialog] = useState(false)
   const [transactionHistoryProps, setTransactionHistoryProps] = useState<{
     accountId?: string
     accountName?: string
@@ -57,7 +58,12 @@ export function Dashboard({ onLogout }: DashboardProps) {
       case "overview":
         return <Overview onShowTransactionHistory={showTransactionHistory} />
       case "transactions":
-        return <Transactions />
+        return (
+          <Transactions
+            openAddDialog={shouldOpenTransactionDialog}
+            onDialogOpenChange={setShouldOpenTransactionDialog}
+          />
+        )
       case "transfer":
         return <Transfer />
       case "settings":
@@ -70,6 +76,12 @@ export function Dashboard({ onLogout }: DashboardProps) {
         return <Overview onShowTransactionHistory={showTransactionHistory} />
     }
   }
+
+  useEffect(() => {
+    if (activeTab !== "transactions" && shouldOpenTransactionDialog) {
+      setShouldOpenTransactionDialog(false)
+    }
+  }, [activeTab, shouldOpenTransactionDialog])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-neutral-50 to-neutral-100">
@@ -119,6 +131,7 @@ export function Dashboard({ onLogout }: DashboardProps) {
         onAddTransaction={() => {
           setActiveTab("transactions")
           setSidebarOpen(false)
+          setShouldOpenTransactionDialog(true)
         }}
         onAddTransfer={() => {
           setActiveTab("transfer")

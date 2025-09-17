@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Plus, Receipt, ArrowRightLeft, Wallet, Target, X } from "lucide-react"
 
@@ -18,6 +18,7 @@ export function FloatingAddButton({
   onAddBudget,
 }: FloatingAddButtonProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const actions = [
     {
@@ -50,8 +51,34 @@ export function FloatingAddButton({
     },
   ]
 
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isOpen])
+
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div ref={containerRef} className="fixed bottom-6 right-6 z-50">
       {/* Action Buttons */}
       {isOpen && (
         <div className="absolute bottom-16 right-0 space-y-3 animate-fade-in">
@@ -72,6 +99,7 @@ export function FloatingAddButton({
                     setIsOpen(false)
                   }}
                   className={`h-12 w-12 rounded-2xl ${action.gradient} border-0 shadow-lg hover:scale-110 transition-all duration-200`}
+                  aria-label={action.label}
                 >
                   <Icon className="h-5 w-5 text-white" />
                 </Button>
@@ -83,10 +111,14 @@ export function FloatingAddButton({
 
       {/* Main FAB */}
       <Button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={`h-16 w-16 rounded-2xl gradient-pink border-0 shadow-2xl hover:scale-110 transition-all duration-300 ${
           isOpen ? "rotate-45" : ""
         }`}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
+        aria-label={isOpen ? "Close quick actions" : "Open quick actions"}
       >
         {isOpen ? <X className="h-6 w-6 text-white" /> : <Plus className="h-6 w-6 text-white" />}
       </Button>
