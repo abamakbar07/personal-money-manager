@@ -149,9 +149,8 @@ class ApiClient {
     return () => this.syncCallbacks.delete(callback)
   }
 
-  private getHeaders(): HeadersInit {
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
       "X-Device-ID": this.deviceId,
     }
 
@@ -163,6 +162,14 @@ class ApiClient {
       headers.Authorization = `Bearer ${this.sessionToken}`
     }
 
+    return headers
+  }
+
+  private getHeaders(contentType: string | null = "application/json"): Record<string, string> {
+    const headers = this.getAuthHeaders()
+    if (contentType) {
+      headers["Content-Type"] = contentType
+    }
     return headers
   }
 
@@ -331,6 +338,48 @@ class ApiClient {
     }
 
     return result
+  }
+
+  async postFormData(endpoint: string, formData: FormData): Promise<any> {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: this.getHeaders(null),
+      body: formData,
+    })
+
+    let data: any = null
+    try {
+      data = await response.json()
+    } catch (error) {
+      data = null
+    }
+
+    if (response.status === 401) {
+      this.clearSession()
+      const errorMessage = data?.error || "Unauthorized"
+      const authError = new Error(errorMessage)
+      ;(authError as any).status = response.status
+      throw authError
+    }
+
+    if (!response.ok) {
+      const errorMessage = data?.error || "Request failed"
+      const requestError = new Error(errorMessage)
+      ;(requestError as any).status = response.status
+      throw requestError
+    }
+
+    if (
+      response.ok &&
+      (endpoint.includes("/transactions") ||
+        endpoint.includes("/accounts") ||
+        endpoint.includes("/budgets") ||
+        endpoint.includes("/import"))
+    ) {
+      this.triggerSync()
+    }
+
+    return data
   }
 
   async put(endpoint: string, data: any): Promise<any> {
