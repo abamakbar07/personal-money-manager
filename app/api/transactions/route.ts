@@ -149,13 +149,15 @@ export async function POST(request: NextRequest) {
     }
     console.error("Create transaction error:", error)
 
+    const message = error instanceof Error ? error.message : String(error)
+
     // Return specific error messages for validation failures
-    if (error.message.includes("not found") || error.message.includes("access denied")) {
-      return NextResponse.json({ error: error.message }, { status: 404 })
+    if (message.includes("not found") || message.includes("access denied")) {
+      return NextResponse.json({ error: message }, { status: 404 })
     }
 
-    if (error.message.includes("Insufficient")) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    if (message.includes("Insufficient")) {
+      return NextResponse.json({ error: message }, { status: 400 })
     }
 
     return NextResponse.json({ error: "Failed to create transaction" }, { status: 500 })
@@ -241,13 +243,15 @@ export async function PUT(request: NextRequest) {
     }
     console.error("Update transaction error:", error)
 
+    const message = error instanceof Error ? error.message : String(error)
+
     // Return specific error messages for validation failures
-    if (error.message.includes("not found") || error.message.includes("access denied")) {
-      return NextResponse.json({ error: error.message }, { status: 404 })
+    if (message.includes("not found") || message.includes("access denied")) {
+      return NextResponse.json({ error: message }, { status: 404 })
     }
 
-    if (error.message.includes("Insufficient")) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    if (message.includes("Insufficient")) {
+      return NextResponse.json({ error: message }, { status: 400 })
     }
 
     return NextResponse.json({ error: "Failed to update transaction" }, { status: 500 })
@@ -296,8 +300,10 @@ export async function DELETE(request: NextRequest) {
     }
     console.error("Delete transaction error:", error)
 
-    if (error.message.includes("not found") || error.message.includes("access denied")) {
-      return NextResponse.json({ error: error.message }, { status: 404 })
+    const message = error instanceof Error ? error.message : String(error)
+
+    if (message.includes("not found") || message.includes("access denied")) {
+      return NextResponse.json({ error: message }, { status: 404 })
     }
 
     return NextResponse.json({ error: "Failed to delete transaction" }, { status: 500 })
