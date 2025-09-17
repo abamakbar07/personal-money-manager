@@ -1,6 +1,27 @@
 import { sql } from "./database"
 import bcrypt from "bcryptjs"
 
+let userSettingsSchemaEnsured = false
+
+async function ensureUserSettingsSchema() {
+  if (userSettingsSchemaEnsured) return
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'user_settings' AND column_name = 'monthly_start_day'
+      ) THEN
+        ALTER TABLE user_settings
+          ADD COLUMN monthly_start_day INTEGER DEFAULT 1 CHECK (monthly_start_day BETWEEN 1 AND 31);
+      END IF;
+    END $$;
+  `
+
+  userSettingsSchemaEnsured = true
+}
+
 // Generate a simple UUID without external dependency
 function generateUUID(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -56,6 +77,8 @@ export async function registerUser(identifier: string, password: string): Promis
       RETURNING id
     `
   }
+
+  await ensureUserSettingsSchema()
 
   await sql`
     INSERT INTO user_settings (user_id)
@@ -200,6 +223,8 @@ export async function changePassword(userId: string, newPassword: string): Promi
 }
 
 export async function getUserSettings(userId: string) {
+  await ensureUserSettingsSchema()
+
   const [settings] = await sql`
     SELECT currency, date_format, theme, notifications_enabled, auto_backup, monthly_start_day
     FROM user_settings WHERE user_id = ${userId}
@@ -208,6 +233,8 @@ export async function getUserSettings(userId: string) {
 }
 
 export async function updateUserSettings(userId: string, settings: any) {
+  await ensureUserSettingsSchema()
+
   await sql`
     UPDATE user_settings
     SET currency = ${settings.currency || "IDR"},
