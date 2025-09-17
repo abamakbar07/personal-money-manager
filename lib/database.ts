@@ -1,8 +1,11 @@
 import { neon, neonConfig, Pool } from "@neondatabase/serverless"
 import type { PoolClient } from "@neondatabase/serverless"
-import ws from "ws"
 
-neonConfig.webSocketConstructor = ws
+const webSocketConstructor = globalThis.WebSocket
+
+if (webSocketConstructor) {
+  neonConfig.webSocketConstructor = webSocketConstructor
+}
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set")
